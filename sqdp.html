@@ -1162,6 +1162,227 @@ function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onToggle,onCat
   );
 }
 
+// ─── HELP PANEL ───────────────────────────────────────────────────────────────
+function HelpPanel({onClose}){
+  const [tab,setTab]=useState('tablica');
+  const TABS=[
+    {id:'tablica',  label:'🔵 Tablica SQDP'},
+    {id:'kolka',    label:'⭕ Kółka'},
+    {id:'problemy', label:'📋 Problemy'},
+    {id:'statystyki',label:'📊 Statystyki'},
+    {id:'podsumowanie',label:'📈 Podsumowanie'},
+    {id:'ustawienia',label:'⚙ Ustawienia'},
+  ];
+  const CONTENT={
+    tablica:(
+      <div>
+        <h3 style={{margin:'0 0 0.75rem',fontSize:'1rem',color:'#0f172a'}}>Tablica SQDP — widok główny</h3>
+        <p style={{marginBottom:'0.75rem'}}>Cyfrowe odwzorowanie fizycznej tablicy wiszące na ścianie. Cztery kolumny odpowiadają czterem wskaźnikom Lean:</p>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem',marginBottom:'0.875rem'}}>
+          {[
+            {k:'S',c:'#f59e0b',t:'Safety — Bezpieczeństwo',d:'Monitoruje wypadki, zdarzenia near-miss i przestrzeganie BHP. Najwyższy priorytet.'},
+            {k:'Q',c:'#10b981',t:'Quality — Jakość',d:'Błędy kompletacji, reklamacje klientów, niezgodności jakościowe.'},
+            {k:'D',c:'#3b82f6',t:'Delivery — Dostawa',d:'Realizacja planu dostaw, terminowość, wskaźnik OTIF.'},
+            {k:'P',c:'#ef4444',t:'Production — Produkcja',d:'Wydajność linii, realizacja planu dziennego, OEE lub przepustowość magazynu.'},
+          ].map(({k,c,t,d})=>(
+            <div key={k} style={{background:'#f8fafc',borderRadius:'0.625rem',
+              padding:'0.625rem',borderLeft:`3px solid ${c}`}}>
+              <div style={{fontWeight:700,fontSize:'0.8125rem',color:'#1e293b',marginBottom:'0.25rem'}}>
+                <span style={{background:c,color:'white',borderRadius:'0.25rem',
+                  padding:'0.0625rem 0.375rem',marginRight:'0.375rem',fontSize:'0.75rem'}}>{k}</span>
+                {t}
+              </div>
+              <div style={{fontSize:'0.75rem',color:'#64748b',lineHeight:1.5}}>{d}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'0.625rem',
+          padding:'0.625rem 0.875rem',fontSize:'0.75rem',color:'#92400e',lineHeight:1.6}}>
+          💡 <b>Zasada Lean:</b> Kolejność liter S→Q→D→P nie jest przypadkowa — odzwierciedla hierarchię ważności. Bezpieczeństwo zawsze na pierwszym miejscu.
+        </div>
+      </div>
+    ),
+    kolka:(
+      <div>
+        <h3 style={{margin:'0 0 0.75rem',fontSize:'1rem',color:'#0f172a'}}>Kółka miesięczne</h3>
+        <p style={{marginBottom:'0.75rem',fontSize:'0.8125rem',color:'#475569',lineHeight:1.6}}>
+          Każde kółko reprezentuje jeden miesiąc. Każdy segment = jeden dzień. Klikaj segmenty żeby oznaczać dni robocze.
+        </p>
+        <div style={{display:'flex',flexDirection:'column',gap:'0.5rem',marginBottom:'0.875rem'}}>
+          {[
+            {c:'#dee2e6',tc:'#868e96',s:'⬜ Szary',d:'Dzień nieuzupełniony — kliknij aby oznaczyć.'},
+            {c:'#10b981',tc:'white',s:'🟢 Zielony',d:'Cel osiągnięty — wszystko w porządku, brak interwencji kierownictwa.'},
+            {c:'#f59e0b',tc:'#1e293b',s:'🟡 Żółty',d:'Uwaga — drobny problem, wymaga monitorowania. Pojawia się okienko z opisem.'},
+            {c:'#ef4444',tc:'white',s:'🔴 Czerwony',d:'Problem — cel nieosiągnięty. Wymaga analizy i działania korygującego. Pojawia się okienko z opisem.'},
+            {c:'#bfdbfe',tc:'#1e40af',s:'🔵 Niebieski',d:'Sobota lub Niedziela — automatycznie wykrywane z kalendarza. Klikalne jeśli firma pracuje w weekendy.'},
+          ].map(({c,tc,s,d})=>(
+            <div key={s} style={{display:'flex',alignItems:'flex-start',gap:'0.625rem',
+              background:'#f8fafc',borderRadius:'0.5rem',padding:'0.5rem 0.75rem'}}>
+              <span style={{background:c,color:tc,padding:'0.125rem 0.5rem',borderRadius:'0.75rem',
+                fontSize:'0.75rem',fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>{s}</span>
+              <span style={{fontSize:'0.75rem',color:'#475569',lineHeight:1.5}}>{d}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'0.625rem',
+          padding:'0.625rem 0.875rem',fontSize:'0.75rem',color:'#0369a1',lineHeight:1.6}}>
+          💡 <b>Cykl kliknięć:</b> szary → zielony → żółty → czerwony → szary (reset). Czwarte kliknięcie zawsze czyści dany dzień.<br/>
+          Przyszłe dni są zablokowane — nie można kliknąć dnia który jeszcze nie nastąpił.<br/>
+          Dzisiejszy dzień jest podkreślony czarną ramką.
+        </div>
+      </div>
+    ),
+    problemy:(
+      <div>
+        <h3 style={{margin:'0 0 0.75rem',fontSize:'1rem',color:'#0f172a'}}>Tabela Problemy / Działania</h3>
+        <p style={{marginBottom:'0.75rem',fontSize:'0.8125rem',color:'#475569',lineHeight:1.6}}>
+          Odpowiednik dolnej tabeli na fizycznej tablicy ściennej. Każdy problem widoczny jest od razu pod kółkiem danej kategorii.
+        </p>
+        <div style={{display:'flex',flexDirection:'column',gap:'0.5rem',marginBottom:'0.875rem'}}>
+          {[
+            {t:'Automatyczne dodawanie',d:'Gdy klikniesz żółty lub czerwony dzień i wypiszesz opis — problem automatycznie pojawia się w tabeli poniżej z datą i kategorią.'},
+            {t:'Edycja inline',d:'Kliknij tekst problemu żeby go edytować bezpośrednio w miejscu. Potwierdź Enterem lub ✓.'},
+            {t:'Status',d:'Kliknij badge "Otwarte / W toku / Zamknięte" żeby zmieniać status bez otwierania żadnego okienka.'},
+            {t:'Miejsce niezgodności',d:'Przy zapisywaniu możesz wskazać gdzie powstał problem. Wpływa na statystyki błędów poniżej.'},
+            {t:'Usuwanie',d:'Przycisk × usuwa problem z listy. Kółko zachowuje swój kolor — są niezależne.'},
+          ].map(({t,d})=>(
+            <div key={t} style={{background:'#f8fafc',borderRadius:'0.5rem',padding:'0.5rem 0.75rem'}}>
+              <div style={{fontWeight:700,fontSize:'0.8125rem',color:'#1e293b',marginBottom:'0.125rem'}}>{t}</div>
+              <div style={{fontSize:'0.75rem',color:'#64748b',lineHeight:1.5}}>{d}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'0.625rem',
+          padding:'0.625rem 0.875rem',fontSize:'0.75rem',color:'#92400e',lineHeight:1.6}}>
+          💡 <b>Lean — Czerwone pole bez wyjaśnienia to błąd.</b> Opis przyczyny i działania korygującego jest obowiązkowy przy każdym czerwonym dniu.
+        </div>
+      </div>
+    ),
+    statystyki:(
+      <div>
+        <h3 style={{margin:'0 0 0.75rem',fontSize:'1rem',color:'#0f172a'}}>Statystyki błędów</h3>
+        <p style={{marginBottom:'0.75rem',fontSize:'0.8125rem',color:'#475569',lineHeight:1.6}}>
+          Automatyczne liczniki pod tabelą problemów. Pokazują ile błędów trafiło do każdej kategorii statystyk.
+        </p>
+        <div style={{display:'flex',flexDirection:'column',gap:'0.5rem',marginBottom:'0.875rem'}}>
+          {[
+            {t:'Kategorie statystyk',d:'Każde "Miejsce niezgodności" ma przypisany typ: "tylko tabela" (nie liczy się do statystyk) lub "statystyki" (liczy się i pojawia w kafelku). Typy możesz dowolnie konfigurować.'},
+            {t:'Domyślne kategorie',d:'Fabrycznie: "Błędy do klienta" (Wysyłka) i "Błędy na produkcję" (Magazyn wydania, Produkcja). Możesz je usunąć i dodać własne.'},
+            {t:'Konfiguracja',d:'W okienku dodawania uwagi, sekcja "Miejsce niezgodności" → przycisk ⚙ Zarządzaj miejscami. Dodajesz miejsca, nazywasz kategorie statystyk, usuwasz niepotrzebne.'},
+            {t:'Procenty',d:'Kafelek pokazuje liczbę błędów danej kategorii i jej udział procentowy w stosunku do wszystkich problemów miesiąca.'},
+          ].map(({t,d})=>(
+            <div key={t} style={{background:'#f8fafc',borderRadius:'0.5rem',padding:'0.5rem 0.75rem'}}>
+              <div style={{fontWeight:700,fontSize:'0.8125rem',color:'#1e293b',marginBottom:'0.125rem'}}>{t}</div>
+              <div style={{fontSize:'0.75rem',color:'#64748b',lineHeight:1.5}}>{d}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+    podsumowanie:(
+      <div>
+        <h3 style={{margin:'0 0 0.75rem',fontSize:'1rem',color:'#0f172a'}}>Zakładka Podsumowanie</h3>
+        <p style={{marginBottom:'0.75rem',fontSize:'0.8125rem',color:'#475569',lineHeight:1.6}}>
+          Roczna tabela KPI — odpowiednik arkusza Excel który dotychczas był uzupełniany ręcznie po każdym miesiącu.
+        </p>
+        <div style={{display:'flex',flexDirection:'column',gap:'0.5rem',marginBottom:'0.875rem'}}>
+          {[
+            {t:'Kolumny S, Q, D, P i RAZEM',d:'Pobierane automatycznie z kółek tablicy. Niebieskie tło = dane "live". Miesiąc bieżący aktualizuje się na bieżąco gdy uzupełniasz kółka.'},
+            {t:'Wydania ilość pozycji / dokumentów',d:'Uzupełniasz ręcznie danymi z systemu WMS/ERP (np. z dokumentów RW/MMW). Dane są zapisywane automatycznie.'},
+            {t:'Pomyłki wydań',d:'Liczba błędnych pozycji w danym miesiącu — wpisujesz ręcznie.'},
+            {t:'Poprawność wydań %',d:'Wyliczana automatycznie: (Pozycje − Pomyłki) ÷ Pozycje × 100%. Np. 505 pozycji, 2 pomyłki = 99,60%.'},
+            {t:'Dodatkowe kolumny',d:'Kliknij "+ kolumna" żeby dodać własne. Nazwy kolumn są edytowalne — kliknij nagłówek. Dane się nie gubią przy nawigacji.'},
+            {t:'Auto-zapis',d:'Wszystkie wpisane dane są automatycznie zapamiętywane w przeglądarce (localStorage). Wracając do Podsumowania dane są zachowane.'},
+          ].map(({t,d})=>(
+            <div key={t} style={{background:'#f8fafc',borderRadius:'0.5rem',padding:'0.5rem 0.75rem'}}>
+              <div style={{fontWeight:700,fontSize:'0.8125rem',color:'#1e293b',marginBottom:'0.125rem'}}>{t}</div>
+              <div style={{fontSize:'0.75rem',color:'#64748b',lineHeight:1.5}}>{d}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+    ustawienia:(
+      <div>
+        <h3 style={{margin:'0 0 0.75rem',fontSize:'1rem',color:'#0f172a'}}>Ustawienia i konfiguracja</h3>
+        <div style={{display:'flex',flexDirection:'column',gap:'0.5rem',marginBottom:'0.875rem'}}>
+          {[
+            {t:'Linie produkcyjne / Linie magazynowe',d:'Przycisk ⚙ obok nazw linii (np. Unisystem, Riverdi). Możesz zmieniać nazwy, dodawać nowe linie lub usuwać. Każda linia ma osobną tablicę i osobne dane.'},
+            {t:'Wyczyść miesiąc',d:'Czerwony przycisk "🗑 Wyczyść miesiąc" — czyści wszystkie zaznaczenia kółka dla aktualnie wybranej linii i miesiąca. Odpowiednik wymazania fizycznej tablicy. Wymaga potwierdzenia.'},
+            {t:'Rozmiar interfejsu S/M/L/XL',d:'Pasek w samej górze ekranu. M = automatyczny (zalecany). L i XL dla dużych monitorów halowych oglądanych z odległości. S dla małych laptopów.'},
+            {t:'Etykiety problemów',d:'W okienku dodawania uwagi możesz dodawać własne etykiety przez "+ Nowa etykieta". Są zapamiętywane na czas sesji. Domyślne etykiety można usuwać.'},
+            {t:'Miejsca niezgodności',d:'⚙ Zarządzaj miejscami w okienku dodawania uwagi. Dodaj własne miejsca, skonfiguruj które liczą się do statystyk i jak się nazywają kategorie.'},
+            {t:'Nagłówki kategorii',d:'Kliknij nagłówek SAFETY / QUALITY / DELIVERY / PRODUCTION żeby zobaczyć szczegółowy opis co mierzy dana litera — oddzielnie dla Produkcji i Magazynu.'},
+          ].map(({t,d})=>(
+            <div key={t} style={{background:'#f8fafc',borderRadius:'0.5rem',padding:'0.5rem 0.75rem'}}>
+              <div style={{fontWeight:700,fontSize:'0.8125rem',color:'#1e293b',marginBottom:'0.125rem'}}>{t}</div>
+              <div style={{fontSize:'0.75rem',color:'#64748b',lineHeight:1.5}}>{d}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:'0.625rem',
+          padding:'0.625rem 0.875rem',fontSize:'0.75rem',color:'#065f46',lineHeight:1.6}}>
+          💡 Wersja aplikacji: <b>v0.1-beta</b> — tablica SQDP. Aplikacja jest w fazie pilotażu.
+          Feedback kieruj do administratora systemu.
+        </div>
+      </div>
+    ),
+  };
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.65)',display:'flex',
+      alignItems:'center',justifyContent:'center',zIndex:300,padding:'1.25rem'}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'white',borderRadius:'1.25rem',width:'100%',maxWidth:680,
+        maxHeight:'88vh',display:'flex',flexDirection:'column',
+        boxShadow:'0 24px 64px rgba(0,0,0,0.25)',overflow:'hidden'}}>
+        {/* Header */}
+        <div style={{background:'#0f172a',padding:'1rem 1.25rem',display:'flex',
+          alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+          <div>
+            <div style={{color:'white',fontWeight:900,fontSize:'1.0625rem'}}>❓ Pomoc — TABLICA SQDP</div>
+            <div style={{color:'rgba(255,255,255,0.5)',fontSize:'0.75rem',marginTop:'0.125rem'}}>
+              Kliknij zakładkę żeby przejść do opisu danej sekcji
+            </div>
+          </div>
+          <button onClick={onClose}
+            style={{background:'rgba(255,255,255,0.12)',border:'none',color:'white',
+              width:'2rem',height:'2rem',borderRadius:'50%',cursor:'pointer',fontSize:'1.125rem',
+              display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+        </div>
+        {/* Tabs */}
+        <div style={{display:'flex',gap:0,borderBottom:'1px solid #f1f5f9',
+          overflowX:'auto',flexShrink:0,background:'#f8fafc'}}>
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              style={{border:'none',borderBottom:tab===t.id?'2px solid #3b82f6':'2px solid transparent',
+                background:'transparent',padding:'0.625rem 0.875rem',
+                fontSize:'0.75rem',fontWeight:tab===t.id?700:500,
+                color:tab===t.id?'#1e3a8a':'#64748b',
+                cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap',flexShrink:0}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {/* Content */}
+        <div style={{flex:1,overflowY:'auto',padding:'1.25rem'}}>
+          {CONTENT[tab]}
+        </div>
+        {/* Footer */}
+        <div style={{padding:'0.75rem 1.25rem',borderTop:'1px solid #f1f5f9',
+          display:'flex',justifyContent:'flex-end',flexShrink:0}}>
+          <button onClick={onClose}
+            style={{background:'#0f172a',color:'white',border:'none',
+              borderRadius:'0.625rem',padding:'0.5rem 1.25rem',
+              fontWeight:700,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>
+            Zamknij
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN BOARD ───────────────────────────────────────────────────────────────
 function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onSummary,goals,setGoals,locations,setLocations}){
   const now=new Date();
@@ -1172,6 +1393,7 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
   const [showReset, setShowReset]=useState(false);
   const [showLineEd,setShowLineEd]=useState(false);
   const [catInfo,   setCatInfo]  =useState(null);
+  const [showHelp,  setShowHelp] =useState(false);
   const [customLabels,setCustomLabels]=useState({S:[],Q:[],D:[],P:[]});
 
   const line=lines[lineIdx]?.name||'Linia';
@@ -1281,6 +1503,15 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
             display:'flex',alignItems:'center',gap:'0.3125rem'}}>
           📊 Podsumowanie
         </button>
+        {/* Help */}
+        <button onClick={()=>setShowHelp(true)}
+          title="Pomoc — opis funkcji aplikacji"
+          style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',
+            color:'rgba(255,255,255,0.7)',borderRadius:'0.5rem',
+            padding:'0.375rem 0.75rem',fontSize:'0.75rem',fontWeight:600,
+            cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:'0.25rem'}}>
+          ❓ Pomoc
+        </button>
       </div>
 
       {/* ── BOARD ── */}
@@ -1334,25 +1565,30 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
         onSave={nl=>{setLines(nl);setLineIdx(0);setShowLineEd(false);}}
         onClose={()=>setShowLineEd(false)}/>}
       {catInfo&&<CatInfoModal catKey={catInfo} onClose={()=>setCatInfo(null)}/>}
+      {showHelp&&<HelpPanel onClose={()=>setShowHelp(false)}/>}
     </div>
   );
 }
 
 // ─── HISTORICAL DATA from ODS (Unisystem) ────────────────────────────────────
-const HIST_UNISYSTEM = [
-  {year:2025,month:3,  S:0.952,Q:0.9985,D:1.0,  P:1.0,  razem:0.9876,wyd_poz:673,wyd_dok:361,pomylki:1,przyjecia_poz:415,przyjecia_dok:142},
-  {year:2025,month:4,  S:null, Q:null,  D:null, P:null,  razem:null,  wyd_poz:641,wyd_dok:338,pomylki:null,przyjecia_poz:423,przyjecia_dok:136},
-  {year:2025,month:5,  S:1.0,  Q:0.998, D:1.0,  P:1.0,  razem:0.9993,wyd_poz:536,wyd_dok:305,pomylki:1,przyjecia_poz:278,przyjecia_dok:114},
-  {year:2025,month:6,  S:1.0,  Q:0.998, D:1.0,  P:1.0,  razem:0.9893,wyd_poz:620,wyd_dok:339,pomylki:1,przyjecia_poz:417,przyjecia_dok:136},
-  {year:2025,month:7,  S:1.0,  Q:0.998, D:0.995,P:1.0,  razem:0.987, wyd_poz:523,wyd_dok:299,pomylki:1,przyjecia_poz:331,przyjecia_dok:99},
-  {year:2025,month:8,  S:1.0,  Q:1.0,   D:1.0,  P:1.0,  razem:1.0,   wyd_poz:554,wyd_dok:319,pomylki:0,przyjecia_poz:376,przyjecia_dok:123},
-  {year:2025,month:9,  S:1.0,  Q:0.998, D:1.0,  P:1.0,  razem:0.9995,wyd_poz:631,wyd_dok:335,pomylki:1,przyjecia_poz:341,przyjecia_dok:117},
-  {year:2025,month:10, S:1.0,  Q:0.996, D:1.0,  P:1.0,  razem:0.999, wyd_poz:484,wyd_dok:294,pomylki:2,przyjecia_poz:323,przyjecia_dok:112},
-  {year:2025,month:11, S:1.0,  Q:0.998, D:1.0,  P:1.0,  razem:0.9995,wyd_poz:459,wyd_dok:281,pomylki:1,przyjecia_poz:283,przyjecia_dok:113},
-  {year:2026,month:0,  S:1.0,  Q:1.0,   D:1.0,  P:1.0,  razem:1.0,   wyd_poz:619,wyd_dok:329,pomylki:0,przyjecia_poz:299,przyjecia_dok:106},
-  {year:2026,month:1,  S:0.95, Q:1.0,   D:1.0,  P:1.0,  razem:0.988, wyd_poz:525,wyd_dok:303,pomylki:0,przyjecia_poz:375,przyjecia_dok:115},
-  {year:2026,month:2,  S:1.0,  Q:0.996, D:0.9963,P:1.0, razem:0.998, wyd_poz:505,wyd_dok:276,pomylki:2,przyjecia_poz:275,przyjecia_dok:102},
-];
+// Tabela podsumowania — bieżący rok, puste wiersze do samodzielnego uzupełnienia.
+// S/Q/D/P będą pobierane live z tablicy gdy uzupełnisz kółka.
+// Pozostałe kolumny (wydania, pomyłki) wypełniasz ręcznie z systemu WMS/ERP.
+const HIST_UNISYSTEM = (() => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed
+  const rows = [];
+  for (let m = 0; m <= currentMonth; m++) {
+    rows.push({
+      year: currentYear, month: m,
+      S: null, Q: null, D: null, P: null, razem: null,
+      wyd_poz: null, wyd_dok: null, pomylki: null,
+      przyjecia_poz: null, przyjecia_dok: null,
+    });
+  }
+  return rows;
+})();
 
 // ─── SUMMARY SCREEN ───────────────────────────────────────────────────────────
 function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, setExtraData}) {
