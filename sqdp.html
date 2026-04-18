@@ -1,0 +1,1678 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tablica SQDP</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback, useRef, useEffect } = React;
+
+// ─── SEED DATA ────────────────────────────────────────────────────────────────
+function makeSeedEntries() {
+  const out = {};
+  const skip = [1,2,8,9,15,16,22,23,29,30];
+  ['Unisystem','Riverdi'].forEach(line => {
+    const redQ = line==='Unisystem'?[7,14,21]:[10,20];
+    const redD = line==='Unisystem'?[18]:[5,19];
+    for (let d=1;d<=31;d++) {
+      if (skip.includes(d)) continue;
+      const ds=`2026-03-${String(d).padStart(2,'0')}`;
+      const k=`${line}-${ds}`;
+      out[k]={id:k,date:ds,line,
+        S:'green',Q:redQ.includes(d)?'red':'green',D:redD.includes(d)?'red':'green',P:'green',
+        comments:{S:'',Q:redQ.includes(d)?'Błąd jakościowy':'',D:redD.includes(d)?'Opóźnienie':',P:'},
+        locations:{S:',Q:',D:',P:'}};
+    }
+  });
+  return out;
+}
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+// Default labels per category
+const DEFAULT_LABELS={
+  S:['Prawie wypadek','Brak ŚOI','Nieporządek w strefie','Uszkodzenie sprzętu'],
+  Q:['Za mało wydanych płytek','Za mało wyświetlaczy','Błąd pakowania','Reklamacja klienta','Niezgodna ilość'],
+  D:['Opóźnienie dostawy','Brak towaru na stanie','Za mało wydanych pozycji','Błąd adresu'],
+  P:['Przestój maszyny','Plan niewykonany','Brak materiału','Niski wolumen'],
+};
+
+// Location options — where did the issue occur
+const LOCATION_OPTIONS = [
+  {value:'',        label:'— Wybierz miejsce —'},
+  {value:'magazyn_przyjecie', label:'Magazyn — przyjęcie towaru'},
+  {value:'magazyn_kompletacja',label:'Magazyn — kompletacja / zbieranie'},
+  {value:'magazyn_wydanie',   label:'Magazyn — wydanie na produkcję'},
+  {value:'produkcja',         label:'Produkcja — linia produkcyjna'},
+  {value:'wysylka_klient',    label:'Wysyłka — do klienta'},
+  {value:'inne',              label:'Inne'},
+];
+
+// Which locations count as "do klienta" vs "na produkcję"
+const LOC_CLIENT = ['wysylka_klient'];
+const LOC_PROD   = ['magazyn_wydanie','produkcja'];
+
+// Enriched category info with Produkcja vs Magazyn split
+const CAT_INFO={
+  S:{
+    name:'Safety – Bezpieczeństwo',icon:'🦺',color:'#f59e0b',
+    desc:'To zawsze priorytet. Mierzymy wszystko co wiąże się ze zdrowiem pracowników.',
+    sections:[
+      {title:'Na Produkcji',points:['Liczba dni bez wypadku, zgłoszenia near-miss (zdarzenia potencjalnie wypadkowe przy maszynach)','Stosowanie odzieży ochronnej (BHP)']},
+      {title:'Na Magazynie',points:['Bezpieczeństwo pracy z wózkami widłowymi (uderzenia w regały)','Stabilność składowania towarów, ergonomia przy pakowaniu paczek','Czystość ciągów komunikacyjnych (brak rozlanych płynów czy leżących folii)']},
+    ],
+    colors:[
+      {l:'🟢 Zielony',t:'Brak wypadków i incydentów. Wszystkie procedury BHP przestrzegane.'},
+      {l:'🟡 Żółty',  t:'Zdarzenie potencjalnie wypadkowe lub drobne naruszenie zasad BHP — wymaga uwagi.'},
+      {l:'🔴 Czerwony',t:'Wypadek przy pracy, uraz lub poważne naruszenie przepisów bezpieczeństwa.'},
+    ],
+    tip:'Safety ma zawsze pierwszeństwo — nawet jeden czerwony dzień w miesiącu to sygnał do natychmiastowego działania.',
+  },
+  Q:{
+    name:'Quality – Jakość',icon:'✅',color:'#10b981',
+    desc:'Tu mierzymy zgodność ze standardem i błędy, które generują straty.',
+    sections:[
+      {title:'Na Produkcji',points:['Liczba braków (odpadów), ilość poprawek (rework)','Zgodność z rysunkiem technicznym, szczelność produktów']},
+      {title:'Na Magazynie',points:['Poprawność kompletacji (czy klient dostał to, co zamówił)','Uszkodzenia towaru podczas transportu wewnętrznego','Błędy w dokumentacji (np. błędna partia/data ważności w systemie)']},
+    ],
+    colors:[
+      {l:'🟢 Zielony',t:'Cel jakościowy osiągnięty. Brak reklamacji, błędy poniżej normy.'},
+      {l:'🟡 Żółty',  t:'Jakość poniżej celu, w akceptowalnym zakresie. Wymaga monitorowania.'},
+      {l:'🔴 Czerwony',t:'Cel nieosiągnięty. Reklamacja klienta lub poważny błąd procesu.'},
+    ],
+    tip:'W magazynie Quality dotyczy głównie poprawności wydań — liczba błędów vs. łączna liczba dokumentów.',
+  },
+  D:{
+    name:'Delivery – Dostawy / Terminowość',icon:'🚚',color:'#3b82f6',
+    desc:'Ten wskaźnik mówi nam, czy wyrabiamy się na czas.',
+    sections:[
+      {title:'Na Produkcji',points:['Realizacja planu dziennego (czy zrobiliśmy 100 sztuk, jeśli plan zakładał 100)','Terminowość przekazania gotowego wyrobu na magazyn']},
+      {title:'Na Magazynie',points:['Czas wysyłki zamówienia (od kliknięcia przez klienta do wyjazdu auta)','Terminowość rozładunku dostaw od dostawców','Wskaźnik OTIF (On-Time In-Full — o czasie i w pełnej ilości)']},
+    ],
+    colors:[
+      {l:'🟢 Zielony',t:'Plan dostaw wykonany. Wszystkie zamówienia zrealizowane terminowo.'},
+      {l:'🟡 Żółty',  t:'Niewielkie opóźnienie lub niedobór — możliwe do nadrobienia.'},
+      {l:'🔴 Czerwony',t:'Plan niewykonany. Poważne opóźnienie lub brak kluczowego towaru.'},
+    ],
+    tip:'Delivery/Week = tygodniowy wskaźnik realizacji planu. Delivery/Day = dzienny. Oba śledzą terminowość w różnych horyzontach.',
+  },
+  P:{
+    name:'Production / Productivity – Produkcja / Produktywność',icon:'⚙️',color:'#ef4444',
+    desc:'To litera, która budzi najwięcej pytań, bo skupia się na wydajności zasobów.',
+    sections:[
+      {title:'Na Produkcji (P – Productivity)',points:['Co mierzy: Efektywność maszyn i ludzi. Najczęściej mierzy się tu OEE (Overall Equipment Effectiveness) lub liczbę wyprodukowanych sztuk na roboczogodzinę.','Przykład: Jeśli linia powinna produkować 10 sztuk na godzinę, a produkuje 8, to wskaźnik P świeci się na czerwono.']},
+      {title:'Na Magazynie (P – Productivity/Performance)',points:['Co mierzy: Tempo pracy operacyjnej, czyli przepustowość magazynu.','Przykład: Liczba linii (pozycji) skompletowanych przez jednego magazyniera w ciągu godziny, liczba rozładowanych palet lub liczba spakowanych paczek na zmianę.','W kontekście People: Często mierzy się tu też absencję (ilu pracowników przyszło do pracy względem planu) lub stopień przeszkolenia (matryca kompetencji).']},
+    ],
+    colors:[
+      {l:'🟢 Zielony',t:'Plan produkcji wykonany. Linia pracuje zgodnie z normą.'},
+      {l:'🟡 Żółty',  t:'Produkcja poniżej planu, możliwe do nadrobienia. Uwaga na wąskie gardła.'},
+      {l:'🔴 Czerwony',t:'Plan niewykonany. Przestój, awaria lub brak materiału.'},
+    ],
+    tip:'W niektórych firmach ta litera to "C" dla Cost (koszty) lub "P" dla People (absencja). Dopasuj do swoich KPI.',
+  },
+};
+
+const CATS=[
+  {key:'S',label:'SAFETY',    color:'#f59e0b',light:'#fef3c7'},
+  {key:'Q',label:'QUALITY',   color:'#10b981',light:'#d1fae5'},
+  {key:'D',label:'DELIVERY',  color:'#3b82f6',light:'#dbeafe'},
+  {key:'P',label:'PRODUCTION',color:'#ef4444',light:'#fee2e2'},
+];
+const AREA_COLOR={S:'#f59e0b',Q:'#10b981',D:'#3b82f6',P:'#ef4444'};
+const AREA_BG   ={S:'#fef3c7',Q:'#d1fae5',D:'#dbeafe',P:'#fee2e2'};
+const STATUS_META={
+  open:       {label:'Otwarte',   bg:'#fee2e2',color:'#dc2626'},
+  in_progress:{label:'W toku',    bg:'#fef3c7',color:'#d97706'},
+  closed:     {label:'Zamknięte', bg:'#d1fae5',color:'#059669'},
+};
+const MONTHS_PL=['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
+const CYCLE={null:'green',green:'yellow',yellow:'red',red:null};
+const S_COLOR={green:'#10b981',yellow:'#f59e0b',red:'#ef4444',null:'#dee2e6'};
+const S_TEXT ={green:'white',  yellow:'#1e293b',red:'white',  null:'#adb5bd'};
+
+function kpiCol(v){return v===null?'#94a3b8':v>=95?'#10b981':v>=80?'#f59e0b':'#ef4444';}
+function isOD(due,status){return due&&status!=='closed'&&new Date(due)<new Date();}
+function daysInMonth(y,m){return new Date(y,m+1,0).getDate();}
+function todayStr(){return new Date().toISOString().slice(0,10);}
+function eKey(l,d){return `${l}-${d}`;}
+function isWknd(y,m,d){const w=new Date(y,m,d).getDay();return w===0||w===6;}
+
+// ─── CAT INFO MODAL ───────────────────────────────────────────────────────────
+function CatInfoModal({catKey,onClose}){
+  const info=CAT_INFO[catKey]; if(!info) return null;
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.65)',display:'flex',
+      alignItems:'center',justifyContent:'center',zIndex:300,padding:20}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'white',borderRadius:'1.375rem',width:'100%',maxWidth:600,
+        maxHeight:'90vh',overflow:'auto',boxShadow:'0 24px 64px rgba(0,0,0,0.25)'}}>
+        {/* Header */}
+        <div style={{background:info.color,padding:'1.25rem 1.5rem',display:'flex',
+          alignItems:'flex-start',justifyContent:'space-between',position:'sticky',top:0,zIndex:1}}>
+          <div>
+            <div style={{color:'white',fontWeight:900,fontSize:'1.25rem'}}>{info.icon} {info.name}</div>
+            <div style={{color:'rgba(255,255,255,0.88)',fontSize:'0.8125rem',marginTop:'0.3125rem',lineHeight:1.5}}>{info.desc}</div>
+          </div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,0.22)',border:'none',color:'white',
+            width:'2.125rem',height:'2.125rem',borderRadius:'50%',cursor:'pointer',fontSize:'1.125rem',flexShrink:0,marginLeft:'1.0rem',
+            display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+        </div>
+        <div style={{padding:22}}>
+          {/* Produkcja vs Magazyn sections */}
+          {info.sections.map(sec=>(
+            <div key={sec.title} style={{marginBottom:'1.125rem'}}>
+              <div style={{fontWeight:800,fontSize:'0.875rem',color:'#1e293b',marginBottom:'0.5rem',
+                display:'flex',alignItems:'center',gap:'0.5rem'}}>
+                <span style={{width:3,height:18,background:info.color,borderRadius:2,display:'inline-block'}}/>
+                {sec.title}
+              </div>
+              {sec.points.map((p,i)=>(
+                <div key={i} style={{display:'flex',gap:'0.625rem',alignItems:'flex-start',
+                  background:'#f8fafc',borderRadius:'0.625rem',padding:'0.5625rem 0.8125rem',marginBottom:'0.375rem'}}>
+                  <span style={{color:info.color,fontWeight:700,flexShrink:0,marginTop:'0.0625rem'}}>•</span>
+                  <span style={{fontSize:'0.8125rem',color:'#475569',lineHeight:1.55}}>{p}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {/* Color meanings */}
+          <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#94a3b8',letterSpacing:1,
+            textTransform:'uppercase',marginBottom:'0.625rem',marginTop:'0.25rem'}}>Znaczenie kolorów</div>
+          {info.colors.map(c=>(
+            <div key={c.l} style={{display:'flex',gap:'0.75rem',background:'#f8fafc',
+              borderRadius:'0.625rem',padding:'0.625rem 0.8125rem',marginBottom:'0.4375rem'}}>
+              <span style={{fontSize:'0.8125rem',fontWeight:700,minWidth:'5.625rem',whiteSpace:'nowrap'}}>{c.l}</span>
+              <span style={{fontSize:'0.8125rem',color:'#475569',lineHeight:1.5}}>{c.t}</span>
+            </div>
+          ))}
+          {/* Tip */}
+          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'0.625rem',
+            padding:'0.6875rem 0.875rem',fontSize:'0.8125rem',color:'#92400e',lineHeight:1.6,marginTop:'0.375rem'}}>
+            💡 <strong>Wskazówka:</strong> {info.tip}
+          </div>
+          <button onClick={onClose} style={{width:'100%',marginTop:'0.875rem',background:'#0f172a',color:'white',
+            border:'none',borderRadius:'0.75rem',padding:'0.75rem',fontWeight:700,fontSize:'0.875rem',
+            cursor:'pointer',fontFamily:'inherit'}}>Zamknij</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── COMMENT MODAL ─────────────────────────────────────────────────────────────
+function CommentModal({info,entries,onSave,onClose,customLabels,onAddLabel,onRemoveLabel}){
+  const {line,date,catKey}=info;
+  const cat=CATS.find(c=>c.key===catKey);
+  const catInfo=CAT_INFO[catKey];
+  const k=eKey(line,date);
+  const status=entries[k]?.[catKey];
+  const [val,setVal]=useState(entries[k]?.comments?.[catKey]||'');
+  const [loc,setLoc]=useState(entries[k]?.locations?.[catKey]||'');
+  const [newLbl,setNewLbl]=useState('');
+  const [showNew,setShowNew]=useState(false);
+  const [confirmDel,setConfirmDel]=useState(null);
+  const allLabels=[...DEFAULT_LABELS[catKey],...(customLabels[catKey]||[])];
+
+  function addNew(){
+    if(!newLbl.trim()) return;
+    onAddLabel(catKey,newLbl.trim()); setVal(newLbl.trim()); setNewLbl(''); setShowNew(false);
+  }
+
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.6)',display:'flex',
+      alignItems:'center',justifyContent:'center',zIndex:200,padding:20}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'white',borderRadius:'1.375rem',width:'100%',maxWidth:540,
+        maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.25)'}}>
+        <div style={{background:cat.color,padding:'0.9375rem 1.25rem',display:'flex',
+          alignItems:'center',justifyContent:'space-between',position:'sticky',top:0}}>
+          <div>
+            <div style={{color:'white',fontWeight:900,fontSize:'1.0625rem'}}>{cat.label} — {date}</div>
+            <div style={{color:'rgba(255,255,255,0.88)',fontSize:'0.75rem',marginTop:'0.125rem'}}>
+              {status==='yellow'?'⚠ Uwaga':'✗ Problem'} — opisz co się stało
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,0.22)',border:'none',color:'white',
+            width:'1.875rem',height:'1.875rem',borderRadius:'50%',cursor:'pointer',fontSize:'1.0rem',
+            display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+        </div>
+        <div style={{padding:18}}>
+          {/* Selected value display */}
+          {val&&(
+            <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.75rem',
+              padding:'0.5625rem 0.8125rem',background:AREA_BG[catKey],borderRadius:'0.625rem',border:`2px solid ${cat.color}`}}>
+              <span style={{flex:1,fontSize:'0.875rem',fontWeight:700,color:'#1e293b'}}>{val}</span>
+              <button onClick={()=>setVal('')} style={{border:'none',background:'none',
+                cursor:'pointer',color:'#94a3b8',fontSize:'1.125rem',lineHeight:1}}>×</button>
+            </div>
+          )}
+
+          {/* Labels */}
+          <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#94a3b8',letterSpacing:1,
+            textTransform:'uppercase',marginBottom:'0.5rem'}}>Wybierz opis problemu</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:'0.4375rem',marginBottom:'0.75rem'}}>
+            {allLabels.map(lbl=>{
+              const isCustom=!DEFAULT_LABELS[catKey].includes(lbl);
+              return(
+                <div key={lbl} style={{display:'flex',alignItems:'center'}}>
+                  <button onClick={()=>setVal(val===lbl?'':lbl)}
+                    style={{border:'2px solid',borderRadius:isCustom&&confirmDel===lbl?'20px 0 0 20px':'20px',
+                      padding:'0.375rem 0.8125rem',fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit',fontWeight:600,
+                      background:val===lbl?cat.color:'white',
+                      borderColor:val===lbl?cat.color:'#e2e8f0',
+                      color:val===lbl?'white':'#475569',
+                      borderRight:isCustom?'none':undefined}}>
+                    {lbl}
+                  </button>
+                  {isCustom&&(confirmDel===lbl?(
+                    <>
+                      <button onClick={()=>{onRemoveLabel(catKey,lbl);if(val===lbl)setVal('');setConfirmDel(null);}}
+                        style={{border:'2px solid #ef4444',borderLeft:'none',background:'#ef4444',
+                          color:'white',padding:'0.375rem 0.5625rem',cursor:'pointer',fontWeight:700,fontSize:'0.75rem'}}>Usuń</button>
+                      <button onClick={()=>setConfirmDel(null)}
+                        style={{border:'2px solid #e2e8f0',borderLeft:'none',borderRadius:'0 20px 20px 0',
+                          background:'white',color:'#94a3b8',padding:'0.375rem 0.5rem',cursor:'pointer',fontSize:'0.75rem'}}>✕</button>
+                    </>
+                  ):(
+                    <button onClick={()=>setConfirmDel(lbl)}
+                      style={{border:'2px solid #e2e8f0',borderLeft:'none',borderRadius:'0 20px 20px 0',
+                        background:'#f8fafc',color:'#94a3b8',padding:'0.375rem 0.4375rem',cursor:'pointer',fontSize:'0.6875rem'}}>🗑</button>
+                  ))}
+                </div>
+              );
+            })}
+            <button onClick={()=>setShowNew(v=>!v)}
+              style={{border:'2px dashed #cbd5e1',borderRadius:'1.25rem',padding:'0.375rem 0.8125rem',fontSize:'0.75rem',
+                cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#94a3b8',background:'white'}}>
+              {showNew?'✕':'＋ Nowa etykieta'}
+            </button>
+          </div>
+          {showNew&&(
+            <div style={{display:'flex',gap:'0.5rem',marginBottom:'0.75rem'}}>
+              <input placeholder="Wpisz własną etykietę..." value={newLbl}
+                onChange={e=>setNewLbl(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&addNew()} autoFocus
+                style={{flex:1,border:'2px solid #e2e8f0',borderRadius:'0.625rem',padding:'0.5625rem 0.8125rem',
+                  fontSize:'0.75rem',fontFamily:'inherit',outline:'none'}}/>
+              <button onClick={addNew}
+                style={{background:'#0f172a',color:'white',border:'none',borderRadius:'0.625rem',
+                  padding:'0.5625rem 1.0rem',fontWeight:700,fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit'}}>Dodaj</button>
+            </div>
+          )}
+
+          {/* Free text */}
+          <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#94a3b8',letterSpacing:1,
+            textTransform:'uppercase',marginBottom:'0.375rem'}}>Lub wpisz własny opis</div>
+          <textarea placeholder="Opisz problem szczegółowo..." rows={2} value={val}
+            onChange={e=>setVal(e.target.value)}
+            style={{width:'100%',border:'2px solid',borderRadius:'0.625rem',padding:'0.5625rem 0.8125rem',
+              fontSize:'0.8125rem',fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',
+              lineHeight:1.5,borderColor:val&&!allLabels.includes(val)?cat.color:'#e2e8f0'}}/>
+
+          {/* Location selector */}
+          <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#94a3b8',letterSpacing:1,
+            textTransform:'uppercase',marginBottom:'0.375rem',marginTop:'0.75rem'}}>Miejsce niezgodności</div>
+          <select value={loc} onChange={e=>setLoc(e.target.value)}
+            style={{width:'100%',border:'2px solid #e2e8f0',borderRadius:'0.625rem',padding:'0.625rem 0.8125rem',
+              fontSize:'0.8125rem',fontFamily:'inherit',outline:'none',background:'white',
+              boxSizing:'border-box',color:loc?'#1e293b':'#94a3b8',
+              borderColor:loc?cat.color:'#e2e8f0'}}>
+            {LOCATION_OPTIONS.map(o=>(
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {loc&&(
+            <div style={{marginTop:'0.375rem',fontSize:'0.6875rem',color:'#64748b',padding:'0.3125rem 0.5rem',
+              background:'#f8fafc',borderRadius:'0.4375rem'}}>
+              {loc==='wysylka_klient'?'📊 Ten problem wejdzie do statystyk "błędy do klienta"':
+               (loc==='magazyn_wydanie'||loc==='produkcja')?'📊 Ten problem wejdzie do statystyk "błędy na produkcję"':
+               '📊 Ten problem będzie widoczny w statystykach ogólnych'}
+            </div>
+          )}
+
+          <div style={{display:'flex',gap:'0.625rem',marginTop:'0.875rem'}}>
+            <button onClick={onClose}
+              style={{flex:1,background:'white',color:'#475569',border:'2px solid #e2e8f0',
+                borderRadius:'0.75rem',padding:'0.75rem',fontWeight:700,fontSize:'0.875rem',cursor:'pointer',fontFamily:'inherit'}}>
+              Anuluj
+            </button>
+            <button onClick={()=>onSave(val,loc)}
+              style={{flex:2,background:'#0f172a',color:'white',border:'none',
+                borderRadius:'0.75rem',padding:'0.75rem',fontWeight:700,fontSize:'0.875rem',cursor:'pointer',fontFamily:'inherit'}}>
+              💾 Zapisz
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── RESET MODAL ──────────────────────────────────────────────────────────────
+function ResetModal({year,month,line,onConfirm,onClose}){
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.7)',display:'flex',
+      alignItems:'center',justifyContent:'center',zIndex:200,padding:24}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'white',borderRadius:'1.125rem',width:'100%',maxWidth:400,
+        boxShadow:'0 20px 60px rgba(0,0,0,0.25)',overflow:'hidden'}}>
+        <div style={{background:'#ef4444',padding:'0.9375rem 1.25rem'}}>
+          <div style={{color:'white',fontWeight:900,fontSize:'1.0625rem'}}>⚠ Reset miesiąca</div>
+        </div>
+        <div style={{padding:20}}>
+          <p style={{fontSize:'0.875rem',color:'#1e293b',lineHeight:1.7,marginBottom:'1.0rem'}}>
+            Wyczyścić dane linii <strong>{line}</strong> za <strong>{MONTHS_PL[month]} {year}</strong>?<br/>
+            <span style={{color:'#ef4444',fontWeight:600}}>Wszystkie zaznaczenia i uwagi zostaną usunięte.</span>
+          </p>
+          <div style={{display:'flex',gap:'0.5rem'}}>
+            <button onClick={onClose} style={{flex:1,background:'white',color:'#475569',border:'2px solid #e2e8f0',borderRadius:'0.625rem',padding:'0.6875rem',fontWeight:700,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>Anuluj</button>
+            <button onClick={onConfirm} style={{flex:2,background:'#ef4444',color:'white',border:'none',borderRadius:'0.625rem',padding:'0.6875rem',fontWeight:700,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>🗑 Wyczyść tablicę</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── LINE EDITOR MODAL ────────────────────────────────────────────────────────
+function LineEditorModal({lines,onSave,onClose}){
+  const [draft,setDraft]=useState([...lines]);
+  function upd(i,v){setDraft(p=>{const n=[...p];n[i]={...n[i],name:v};return n;});}
+  function add(){setDraft(p=>[...p,{id:`l${Date.now()}`,name:'Nowa linia'}]);}
+  function del(i){if(draft.length<=1)return;setDraft(p=>p.filter((_,j)=>j!==i));}
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.65)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,padding:24}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'white',borderRadius:'1.125rem',width:'100%',maxWidth:400,boxShadow:'0 20px 60px rgba(0,0,0,0.25)',overflow:'hidden'}}>
+        <div style={{background:'#0f172a',padding:'0.875rem 1.25rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{color:'white',fontWeight:800,fontSize:'0.9375rem'}}>⚙ Zarządzaj liniami</div>
+          <button onClick={onClose} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:'1.75rem',height:'1.75rem',borderRadius:'50%',cursor:'pointer',fontSize:'0.9375rem',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
+        </div>
+        <div style={{padding:18}}>
+          {draft.map((l,i)=>(
+            <div key={l.id} style={{display:'flex',gap:'0.4375rem',marginBottom:'0.4375rem',alignItems:'center'}}>
+              <input value={l.name} onChange={e=>upd(i,e.target.value)}
+                style={{flex:1,border:'2px solid #e2e8f0',borderRadius:'0.5625rem',padding:'0.5625rem 0.75rem',fontSize:'0.8125rem',fontFamily:'inherit',outline:'none'}}/>
+              {draft.length>1&&<button onClick={()=>del(i)} style={{background:'#fee2e2',border:'none',borderRadius:'0.4375rem',width:'2.125rem',height:'2.125rem',cursor:'pointer',color:'#ef4444',fontSize:'0.9375rem',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>}
+            </div>
+          ))}
+          <button onClick={add} style={{width:'100%',border:'2px dashed #cbd5e1',borderRadius:'0.5625rem',padding:'0.5625rem',background:'white',color:'#64748b',fontSize:'0.75rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:'0.1875rem'}}>＋ Dodaj linię</button>
+          <div style={{display:'flex',gap:'0.5rem',marginTop:'0.75rem'}}>
+            <button onClick={onClose} style={{flex:1,background:'white',color:'#475569',border:'2px solid #e2e8f0',borderRadius:'0.625rem',padding:'0.625rem',fontWeight:700,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>Anuluj</button>
+            <button onClick={()=>onSave(draft)} style={{flex:2,background:'#0f172a',color:'white',border:'none',borderRadius:'0.625rem',padding:'0.625rem',fontWeight:700,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>Zapisz</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SQUARE RING ─────────────────────────────────────────────────────────────
+function SquareRing({cat,year,month,line,entries,onToggle}){
+  const now=new Date();
+  const today=now.getDate();
+  const isCurMon=year===now.getFullYear()&&month===now.getMonth();
+  const days=daysInMonth(year,month);
+  const cx=160,cy=160,r=120,strokeW=28;
+  const segAngle=(2*Math.PI)/days, gap=0.018;
+
+  const ms=`${year}-${String(month+1).padStart(2,'0')}`;
+  const dayList=Object.values(entries).filter(e=>e.date.startsWith(ms)&&e.line===line);
+  const gN=dayList.filter(e=>e[cat.key]==='green').length;
+  const yN=dayList.filter(e=>e[cat.key]==='yellow').length;
+  const rN=dayList.filter(e=>e[cat.key]==='red').length;
+  const filled=gN+yN+rN;
+  const pct=filled>0?Math.round((gN/filled)*100):null;
+
+  const segs=[];
+  for(let d=1;d<=days;d++){
+    const ds=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const k=eKey(line,ds);
+    const st=entries[k]?.[cat.key]??null;
+    const future=isCurMon&&d>today;
+    const wknd=isWknd(year,month,d);
+    const startA=-Math.PI/2+(d-1)*segAngle+gap/2;
+    const endA=startA+segAngle-gap;
+    const ri=r-strokeW/2,ro=r+strokeW/2;
+    const x1=cx+ri*Math.cos(startA),y1=cy+ri*Math.sin(startA);
+    const x2=cx+ro*Math.cos(startA),y2=cy+ro*Math.sin(startA);
+    const x3=cx+ro*Math.cos(endA),  y3=cy+ro*Math.sin(endA);
+    const x4=cx+ri*Math.cos(endA),  y4=cy+ri*Math.sin(endA);
+    const la=segAngle-gap>Math.PI?1:0;
+    const path=`M${x1} ${y1} A${ri} ${ri} 0 ${la} 1 ${x4} ${y4} L${x3} ${y3} A${ro} ${ro} 0 ${la} 0 ${x2} ${y2}Z`;
+    const midA=startA+(segAngle-gap)/2;
+    const lx=cx+r*Math.cos(midA),ly=cy+r*Math.sin(midA);
+    let fill=st?S_COLOR[st]:wknd?'#bfdbfe':future?'#e9ecef':'#dee2e6';
+    let textFill=st?S_TEXT[st]:wknd?'#1e40af':future?'#adb5bd':'#868e96';
+    const isToday=isCurMon&&d===today;
+    const fSize=days===31?'7.5':days===30?'8':'9';
+    segs.push(
+      <g key={d} onClick={()=>onToggle(line,ds,cat.key)} style={{cursor:'pointer'}}>
+        <path d={path} fill={fill}
+          stroke={isToday?'#0f172a':wknd&&!st?'#93c5fd':'white'}
+          strokeWidth={isToday?2.5:1.5} opacity={future?0.55:1}/>
+        <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
+          fontSize={fSize} fontWeight={wknd?"800":"700"} fill={textFill}
+          style={{pointerEvents:'none',userSelect:'none'}}>{d}</text>
+      </g>
+    );
+  }
+  const pctC=pct===null?'#94a3b8':pct>=95?'#10b981':pct>=80?'#f59e0b':'#ef4444';
+  return(
+    <div style={{position:'relative',width:'100%',paddingBottom:'100%'}}>
+      <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <svg width="100%" height="100%" viewBox="0 0 320 320">
+          {segs}
+          <text x={cx} y={cy-14} textAnchor="middle" dominantBaseline="middle"
+            fontSize="52" fontWeight="900" fill={cat.color}
+            style={{fontFamily:'inherit',userSelect:'none'}}>{cat.key}</text>
+          <text x={cx} y={cy+28} textAnchor="middle" dominantBaseline="middle"
+            fontSize="24" fontWeight="800" fill={pctC}
+            style={{fontFamily:'inherit',userSelect:'none'}}>
+            {pct!==null?`${pct}%`:'–'}
+          </text>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ─── GOAL SECTION ─────────────────────────────────────────────────────────────
+// Lean: cel miesiąca + wynik vs cel + opis według wytycznych Lean
+const DEFAULT_GOALS = { S: 100, Q: 99.5, D: 100, P: 95 };
+const LEAN_DESCRIPTIONS = {
+  S: {
+    goal_hint: 'Lean: dąż do 0 wypadków = 100% dni bezpiecznych',
+    achieved: {
+      title: '✅ CEL OSIĄGNIĘTY',
+      color: '#059669', bg: '#f0fdf4', border: '#bbf7d0',
+      desc: 'Wszystko idzie zgodnie z planem. Nie wymagana interwencja kierownictwa.',
+      lean: 'Zero wypadków, zero zdarzeń near-miss, wszystkie zasady BHP przestrzegane.',
+    },
+    missed: {
+      title: '🔴 CEL NIEOSIĄGNIĘTY',
+      color: '#dc2626', bg: '#fff1f2', border: '#fecaca',
+      desc: 'Wystąpiło odchylenie od standardu. Wymagana analiza i działanie korygujące.',
+      lean: 'Lean mówi: „Czerwone pole bez wyjaśnienia to błąd." Opisz: Co się stało? Dlaczego? Co robimy?',
+    },
+    no_data: 'Brak danych — uzupełnij tablicę aby ocenić cel.',
+  },
+  Q: {
+    goal_hint: 'Lean: np. 99,5% poprawności kompletacji (błąd poniżej 0,1% zamówień)',
+    achieved: {
+      title: '✅ CEL OSIĄGNIĘTY',
+      color: '#059669', bg: '#f0fdf4', border: '#bbf7d0',
+      desc: 'Jakość zgodna ze standardem. Nie wymagana interwencja kierownictwa.',
+      lean: 'Wszystkie parametry jakościowe w normie. Brak reklamacji klientów.',
+    },
+    missed: {
+      title: '🔴 CEL NIEOSIĄGNIĘTY',
+      color: '#dc2626', bg: '#fff1f2', border: '#fecaca',
+      desc: 'Jakość poniżej celu. Wymagana analiza 5 Why i działanie korygujące.',
+      lean: 'Zasada „Fakt, nie opinia": podaj konkretną liczbę błędów i przyczynę, nie ogólny opis.',
+    },
+    no_data: 'Brak danych — kliknij segmenty kółka aby oznaczyć dni.',
+  },
+  D: {
+    goal_hint: 'Lean: 100% realizacji planu lub OTIF 95-98%',
+    achieved: {
+      title: '✅ CEL OSIĄGNIĘTY',
+      color: '#059669', bg: '#f0fdf4', border: '#bbf7d0',
+      desc: 'Plan dostaw wykonany. Wszystkie zamówienia zrealizowane terminowo.',
+      lean: 'Wskaźnik OTIF (On-Time In-Full) na poziomie celu. Brak opóźnień.',
+    },
+    missed: {
+      title: '🔴 CEL NIEOSIĄGNIĘTY',
+      color: '#dc2626', bg: '#fff1f2', border: '#fecaca',
+      desc: 'Terminowość poniżej celu. Wymagana analiza przyczyn opóźnień.',
+      lean: 'Opisz odchylenie: „Wynik X% / Cel Y%". Podaj konkretną przyczynę i termin naprawy.',
+    },
+    no_data: 'Brak danych — kliknij segmenty kółka aby oznaczyć dni.',
+  },
+  P: {
+    goal_hint: 'Lean: OEE ≥ 75% lub plan dzienny = 100% normy',
+    achieved: {
+      title: '✅ CEL OSIĄGNIĘTY',
+      color: '#059669', bg: '#f0fdf4', border: '#bbf7d0',
+      desc: 'Wydajność zgodna z normą. Linia/magazyn pracuje efektywnie.',
+      lean: 'Plan produkcji wykonany. Zasoby wykorzystane zgodnie z założeniami.',
+    },
+    missed: {
+      title: '🔴 CEL NIEOSIĄGNIĘTY',
+      color: '#dc2626', bg: '#fff1f2', border: '#fecaca',
+      desc: 'Wydajność poniżej planu. Wymagana analiza i działanie.',
+      lean: 'Podaj fakty: „Wydajność X szt./h — cel Y szt./h. Przyczyna: brak 2 pracowników na zmianie."',
+    },
+    no_data: 'Brak danych — kliknij segmenty kółka aby oznaczyć dni.',
+  },
+};
+
+function GoalSection({ cat, currentPct, goalVal, onSetGoal }) {
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState('');
+  const desc = LEAN_DESCRIPTIONS[cat.key];
+  const effectiveGoal = goalVal !== null ? goalVal : DEFAULT_GOALS[cat.key];
+
+  // Determine status
+  const achieved = currentPct !== null && currentPct >= effectiveGoal;
+  const missed   = currentPct !== null && currentPct < effectiveGoal;
+  const status   = currentPct === null ? 'no_data' : achieved ? 'achieved' : 'missed';
+  const statusInfo = status !== 'no_data' ? desc[status] : null;
+
+  function startEdit() {
+    setInputVal(String(effectiveGoal));
+    setEditing(true);
+  }
+  function saveGoal() {
+    const v = parseFloat(inputVal);
+    if (!isNaN(v) && v >= 0 && v <= 100) onSetGoal(v);
+    setEditing(false);
+  }
+
+  // Gap bar: show wynik vs cel
+  const barWidth = currentPct !== null ? Math.min(currentPct, 100) : 0;
+  const goalPos  = Math.min(effectiveGoal, 100);
+
+  return (
+    <div style={{borderTop:'3px solid #e2e8f0',flexShrink:0}}>
+      {/* Header */}
+      <div style={{background:'#1e293b',padding:'0.5rem 0.875rem',display:'flex',
+        alignItems:'center',justifyContent:'space-between'}}>
+        <span style={{color:'white',fontWeight:700,fontSize:'0.6875rem',letterSpacing:1}}>
+          CEL MIESIĄCA (LEAN TARGET)
+        </span>
+        <span style={{color:'rgba(255,255,255,0.5)',fontSize:'0.625rem'}}>{desc.goal_hint}</span>
+      </div>
+
+      <div style={{padding:'0.75rem 0.875rem',background:'#f8fafc'}}>
+        {/* Wynik / Cel display — format Lean: Wynik / Cel */}
+        <div style={{display:'flex',alignItems:'center',gap:'0.625rem',marginBottom:'0.625rem',flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'baseline',gap:'0.25rem'}}>
+            <span style={{fontSize:'0.6875rem',color:'#64748b',fontWeight:600}}>Wynik:</span>
+            <span style={{fontSize:'1.375rem',fontWeight:900,
+              color: currentPct===null?'#94a3b8': achieved?'#059669':'#dc2626'}}>
+              {currentPct !== null ? `${currentPct.toFixed(1)}%` : '–'}
+            </span>
+          </div>
+          <span style={{fontSize:'1.125rem',color:'#cbd5e1',fontWeight:300}}>/</span>
+          <div style={{display:'flex',alignItems:'baseline',gap:'0.25rem'}}>
+            <span style={{fontSize:'0.6875rem',color:'#64748b',fontWeight:600}}>Cel:</span>
+            {editing ? (
+              <div style={{display:'flex',gap:'0.3125rem',alignItems:'center'}}>
+                <input
+                  value={inputVal}
+                  onChange={e=>setInputVal(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==='Enter') saveGoal(); if(e.key==='Escape') setEditing(false); }}
+                  autoFocus
+                  style={{width:64,border:`2px solid ${cat.color}`,borderRadius:'0.4375rem',
+                    padding:'0.1875rem 0.4375rem',fontSize:'1.0rem',fontWeight:800,fontFamily:'inherit',
+                    outline:'none',textAlign:'center',color:cat.color}}/>
+                <span style={{fontSize:'0.875rem',fontWeight:700,color:cat.color}}>%</span>
+                <button onClick={saveGoal}
+                  style={{background:cat.color,border:'none',borderRadius:'0.375rem',
+                    padding:'0.1875rem 0.5625rem',color:'white',fontWeight:700,fontSize:'0.75rem',
+                    cursor:'pointer',fontFamily:'inherit'}}>✓</button>
+                <button onClick={()=>setEditing(false)}
+                  style={{background:'#f1f5f9',border:'none',borderRadius:'0.375rem',
+                    padding:'0.1875rem 0.4375rem',color:'#64748b',fontSize:'0.75rem',cursor:'pointer'}}>✕</button>
+              </div>
+            ) : (
+              <button onClick={startEdit}
+                style={{background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',
+                  display:'flex',alignItems:'baseline',gap:'0.125rem'}}>
+                <span style={{fontSize:'1.375rem',fontWeight:900,color:cat.color}}>
+                  {effectiveGoal}%
+                </span>
+                <span style={{fontSize:'0.625rem',color:'#94a3b8',marginLeft:'0.1875rem'}}>✎</span>
+              </button>
+            )}
+          </div>
+          {goalVal === null && (
+            <span style={{fontSize:'0.625rem',background:'#fef3c7',color:'#92400e',
+              padding:'0.125rem 0.4375rem',borderRadius:'0.625rem',fontWeight:600}}>
+              domyślny Lean
+            </span>
+          )}
+        </div>
+
+        {/* Progress bar with goal marker */}
+        <div style={{position:'relative',marginBottom:'0.75rem'}}>
+          <div style={{height:8,background:'#e2e8f0',borderRadius:'0.25rem',overflow:'visible',position:'relative'}}>
+            {/* Actual result bar */}
+            <div style={{height:'100%',width:`${barWidth}%`,borderRadius:'0.25rem',
+              background: achieved?'#10b981': missed?'#ef4444':'#94a3b8',
+              transition:'width 0.3s ease'}}/>
+            {/* Goal marker line */}
+            <div style={{position:'absolute',top:-4,left:`${goalPos}%`,
+              width:2,height:16,background:cat.color,borderRadius:1,
+              transform:'translateX(-50%)'}}/>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',
+            marginTop:'0.25rem',fontSize:'0.625rem',color:'#94a3b8'}}>
+            <span>0%</span>
+            <span style={{color:cat.color,fontWeight:700}}>↑ Cel: {effectiveGoal}%</span>
+            <span>100%</span>
+          </div>
+        </div>
+
+        {/* Lean status card */}
+        {status === 'no_data' ? (
+          <div style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'0.625rem',
+            padding:'0.5625rem 0.75rem',fontSize:'0.6875rem',color:'#94a3b8',textAlign:'center'}}>
+            {desc.no_data}
+          </div>
+        ) : (
+          <div style={{background:statusInfo.bg,border:`1.5px solid ${statusInfo.border}`,
+            borderRadius:'0.625rem',padding:'0.625rem 0.8125rem'}}>
+            {/* Title */}
+            <div style={{fontWeight:800,fontSize:'0.8125rem',color:statusInfo.color,marginBottom:'0.3125rem'}}>
+              {statusInfo.title}
+              {missed && currentPct !== null && (
+                <span style={{fontSize:'0.6875rem',fontWeight:600,marginLeft:'0.5rem',
+                  background:'#fee2e2',color:'#dc2626',padding:'0.0625rem 0.5rem',borderRadius:'0.625rem'}}>
+                  odchylenie: {(currentPct - effectiveGoal).toFixed(1)}%
+                </span>
+              )}
+            </div>
+            {/* Main description */}
+            <div style={{fontSize:'0.75rem',color:'#1e293b',lineHeight:1.5,marginBottom:'0.375rem'}}>
+              {statusInfo.desc}
+            </div>
+            {/* Lean principle */}
+            <div style={{fontSize:'0.6875rem',color:statusInfo.color,lineHeight:1.5,
+              background:'white',borderRadius:'0.4375rem',padding:'0.4375rem 0.625rem',
+              border:`1px solid ${statusInfo.border}`,fontStyle:'italic'}}>
+              💡 {statusInfo.lean}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── PROBLEM TABLE (only "Problem" column) ────────────────────────────────────
+function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,onSetGoal}){
+  const [editId,setEditId]=useState(null);
+  const [editTitle,setEditTitle]=useState('');
+
+  const rows=issues.filter(i=>i.line===line&&i.area===cat.key);
+
+  function startEdit(i){setEditId(i.id);setEditTitle(i.title);}
+  function saveEdit(i){setIssues(prev=>prev.map(x=>x.id===i.id?{...x,title:editTitle}:x));setEditId(null);}
+  function del(id){setIssues(prev=>prev.filter(x=>x.id!==id));}
+  function cycle(id){
+    setIssues(prev=>prev.map(x=>{
+      if(x.id!==id) return x;
+      const n={open:'in_progress',in_progress:'closed',closed:'open'};
+      return{...x,status:n[x.status]||'open'};
+    }));
+  }
+
+  // Stats — error breakdown by location
+  const totalRows=rows.length;
+  const clientErrors=rows.filter(i=>LOC_CLIENT.includes(i.location)).length;
+  const prodErrors  =rows.filter(i=>LOC_PROD.includes(i.location)).length;
+  const clientPct=totalRows>0?Math.round((clientErrors/totalRows)*100):0;
+  const prodPct  =totalRows>0?Math.round((prodErrors  /totalRows)*100):0;
+
+  const EMPTY_COUNT=6;
+
+  return(
+    <div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+      {/* Header — only "Problem" */}
+      <div style={{background:cat.color,padding:'0.5rem 0.875rem',display:'flex',alignItems:'center',
+        justifyContent:'space-between',flexShrink:0}}>
+        <span style={{color:'white',fontWeight:800,fontSize:'0.75rem',letterSpacing:1}}>PROBLEMY / DZIAŁANIA</span>
+        <span style={{color:'rgba(255,255,255,0.85)',fontSize:'0.6875rem',fontWeight:700}}>PROBLEM</span>
+      </div>
+
+      {/* Rows */}
+      <div style={{flex:1,display:'flex',flexDirection:'column',background:'white'}}>
+        {rows.length===0?(
+          Array.from({length:EMPTY_COUNT}).map((_,i)=>(
+            <div key={i} style={{flex:1,borderBottom:'1px solid #f1f5f9',padding:'0.625rem 0.875rem',
+              display:'flex',alignItems:'center',minHeight:'2.375rem'}}>
+              <div style={{borderBottom:'1px dashed #e2e8f0',width:'100%',height:1}}/>
+            </div>
+          ))
+        ):(
+          <>
+            {rows.map(issue=>(
+              <div key={issue.id} style={{borderBottom:'1px solid #f1f5f9',padding:'0.5625rem 0.875rem',
+                display:'flex',alignItems:'center',gap:'0.5rem',minHeight:'2.75rem'}}>
+                {editId===issue.id?(
+                  <div style={{display:'flex',gap:'0.3125rem',flex:1}}>
+                    <input value={editTitle} onChange={e=>setEditTitle(e.target.value)}
+                      onKeyDown={e=>e.key==='Enter'&&saveEdit(issue)}
+                      style={{flex:1,border:'1.5px solid #3b82f6',borderRadius:'0.4375rem',padding:'0.3125rem 0.5625rem',
+                        fontSize:'0.75rem',fontFamily:'inherit',outline:'none'}} autoFocus/>
+                    <button onClick={()=>saveEdit(issue)}
+                      style={{background:'#10b981',border:'none',borderRadius:'0.375rem',padding:'0.3125rem 0.5625rem',
+                        color:'white',fontWeight:700,fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit'}}>✓</button>
+                    <button onClick={()=>setEditId(null)}
+                      style={{background:'#f1f5f9',border:'none',borderRadius:'0.375rem',padding:'0.3125rem 0.4375rem',
+                        color:'#94a3b8',fontSize:'0.75rem',cursor:'pointer'}}>✕</button>
+                  </div>
+                ):(
+                  <>
+                    {/* Date chip */}
+                    <span style={{fontSize:'0.625rem',color:'#94a3b8',fontWeight:600,whiteSpace:'nowrap',
+                      background:'#f8fafc',padding:'0.125rem 0.375rem',borderRadius:'0.375rem',flexShrink:0}}>
+                      {issue.date||'—'}
+                    </span>
+                    {/* Title — click to edit */}
+                    <span style={{flex:1,fontSize:'0.75rem',color:'#1e293b',fontWeight:600,
+                      cursor:'pointer',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.4}}
+                      title="Kliknij aby edytować"
+                      onClick={()=>startEdit(issue)}>
+                      {issue.title||<span style={{color:'#cbd5e1',fontStyle:'italic'}}>brak opisu</span>}
+                    </span>
+                    {/* Location chip if set */}
+                    {issue.location&&(
+                      <span style={{fontSize:'0.625rem',background:
+                        LOC_CLIENT.includes(issue.location)?'#fee2e2':
+                        LOC_PROD.includes(issue.location)?'#fef3c7':'#f1f5f9',
+                        color:LOC_CLIENT.includes(issue.location)?'#dc2626':
+                          LOC_PROD.includes(issue.location)?'#d97706':'#64748b',
+                        padding:'0.125rem 0.4375rem',borderRadius:'0.625rem',fontWeight:700,flexShrink:0,whiteSpace:'nowrap'}}>
+                        {LOC_CLIENT.includes(issue.location)?'→ klient':
+                         LOC_PROD.includes(issue.location)?'→ produkcja':'inne'}
+                      </span>
+                    )}
+                    {/* Status badge */}
+                    <button onClick={()=>cycle(issue.id)}
+                      style={{border:'none',borderRadius:'0.625rem',padding:'0.1875rem 0.5rem',fontSize:'0.625rem',fontWeight:700,
+                        cursor:'pointer',fontFamily:'inherit',flexShrink:0,
+                        background:STATUS_META[issue.status].bg,color:STATUS_META[issue.status].color}}>
+                      {STATUS_META[issue.status].label}
+                    </button>
+                    <button onClick={()=>del(issue.id)}
+                      style={{background:'none',border:'none',cursor:'pointer',color:'#e2e8f0',
+                        fontSize:'0.9375rem',lineHeight:1,flexShrink:0}}>×</button>
+                  </>
+                )}
+              </div>
+            ))}
+            {rows.length<EMPTY_COUNT&&Array.from({length:EMPTY_COUNT-rows.length}).map((_,i)=>(
+              <div key={`e${i}`} style={{flex:1,borderBottom:'1px solid #f8fafc',padding:'0.5625rem 0.875rem',
+                display:'flex',alignItems:'center',minHeight:'2.375rem'}}>
+                <div style={{borderBottom:'1px dashed #e2e8f0',width:'100%',height:1}}/>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* ── STATS SECTION — separated by gap ── */}
+      <div style={{background:'#f8fafc',borderTop:'3px solid #e2e8f0',padding:'0.625rem 0.875rem',flexShrink:0}}>
+        <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#64748b',letterSpacing:1,
+          textTransform:'uppercase',marginBottom:'0.5rem'}}>Statystyki błędów</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem'}}>
+          {/* Errors to client */}
+          <div style={{background:'white',borderRadius:'0.625rem',padding:'0.5625rem 0.6875rem',
+            border:'1px solid #fecaca'}}>
+            <div style={{fontSize:'0.625rem',color:'#94a3b8',fontWeight:600,marginBottom:'0.25rem'}}>→ Błędy do klienta</div>
+            <div style={{display:'flex',alignItems:'baseline',gap:'0.3125rem'}}>
+              <span style={{fontSize:'1.25rem',fontWeight:900,color:'#dc2626'}}>{clientErrors}</span>
+              <span style={{fontSize:'0.6875rem',color:'#94a3b8'}}>({clientPct}%)</span>
+            </div>
+            {totalRows>0&&(
+              <div style={{marginTop:'0.3125rem',height:4,background:'#fee2e2',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${clientPct}%`,background:'#ef4444',borderRadius:3}}/>
+              </div>
+            )}
+          </div>
+          {/* Errors to production */}
+          <div style={{background:'white',borderRadius:'0.625rem',padding:'0.5625rem 0.6875rem',
+            border:'1px solid #fed7aa'}}>
+            <div style={{fontSize:'0.625rem',color:'#94a3b8',fontWeight:600,marginBottom:'0.25rem'}}>→ Błędy na produkcję</div>
+            <div style={{display:'flex',alignItems:'baseline',gap:'0.3125rem'}}>
+              <span style={{fontSize:'1.25rem',fontWeight:900,color:'#d97706'}}>{prodErrors}</span>
+              <span style={{fontSize:'0.6875rem',color:'#94a3b8'}}>({prodPct}%)</span>
+            </div>
+            {totalRows>0&&(
+              <div style={{marginTop:'0.3125rem',height:4,background:'#fef3c7',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${prodPct}%`,background:'#f59e0b',borderRadius:3}}/>
+              </div>
+            )}
+          </div>
+        </div>
+        {totalRows>0&&(
+          <div style={{fontSize:'0.625rem',color:'#94a3b8',textAlign:'center',marginTop:'0.4375rem'}}>
+            Łącznie {totalRows} {totalRows===1?'problem':totalRows<5?'problemy':'problemów'} w tym miesiącu
+          </div>
+        )}
+      </div>
+
+      {/* ── CEL MIESIĄCA + LEAN DESCRIPTION ── */}
+      <GoalSection cat={cat} currentPct={currentPct} goalVal={goalVal} onSetGoal={onSetGoal}/>
+    </div>
+  );
+}
+
+// ─── SQDP COLUMN ─────────────────────────────────────────────────────────────
+function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onToggle,onCatClick,goals,setGoals}){
+  const ms=`${year}-${String(month+1).padStart(2,'0')}`;
+  const dayList=Object.values(entries).filter(e=>e.date.startsWith(ms)&&e.line===line);
+  const gN=dayList.filter(e=>e[cat.key]==='green').length;
+  const yN=dayList.filter(e=>e[cat.key]==='yellow').length;
+  const rN=dayList.filter(e=>e[cat.key]==='red').length;
+  // Current KPI for this cat/month/line
+  const filled=gN+yN+rN;
+  const currentPct = filled>0 ? Math.round((gN/filled)*10000)/100 : null;
+  const goalKey = `${line}-${year}-${month}-${cat.key}`;
+  const goalVal = goals[goalKey] ?? null;
+  return(
+    <div
+      className="sqdp-column"
+      style={{
+        flex:'1 1 0',
+        minWidth:0,
+        maxWidth:'380px',
+        display:'flex',
+        flexDirection:'column',
+      }}>
+      <button onClick={onCatClick}
+        style={{background:cat.color,border:'none',borderRadius:'0.75rem 0.75rem 0 0',padding:'0.625rem 0',
+          textAlign:'center',cursor:'pointer',fontFamily:'inherit',
+          display:'flex',alignItems:'center',justifyContent:'center',gap:'0.375rem',width:'100%',flexShrink:0}}>
+        <span style={{color:'white',fontWeight:900,fontSize:'0.8125rem',letterSpacing:3}}>{cat.label}</span>
+        <span style={{color:'rgba(255,255,255,0.65)',fontSize:'0.6875rem'}}>ℹ</span>
+      </button>
+      <div style={{background:'white',border:`2px solid ${cat.light}`,borderTop:'none',
+        borderRadius:'0 0 0.75rem 0.75rem',flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        {/* Ring wrapper — hard cap prevents enormous rings on 50" */}
+        <div
+          className="sqdp-ring-wrap"
+          style={{
+            padding:'0.5rem 0.75rem 0.25rem',
+            flexShrink:0,
+            width:'100%',
+            maxWidth:'340px',
+            alignSelf:'center',
+          }}>
+          <SquareRing cat={cat} year={year} month={month} line={line} entries={entries} onToggle={onToggle}/>
+        </div>
+        <div style={{display:'flex',justifyContent:'center',gap:'0.625rem',padding:'0.25rem 0.5rem 0.375rem',
+          flexShrink:0,flexWrap:'wrap'}}>
+          {[['#10b981',gN,'✓ cel'],['#f59e0b',yN,'! uwaga'],['#ef4444',rN,'✗ problem'],
+            ['#bfdbfe',null,'So/Nd']].map(([c,n,s])=>(
+            <span key={s} style={{display:'flex',alignItems:'center',gap:'0.1875rem',fontSize:'0.6875rem',fontWeight:700,
+              color:c==='#bfdbfe'?'#1e40af':'#64748b'}}>
+              <span style={{width:9,height:9,borderRadius:'50%',background:c,
+                border:c==='#bfdbfe'?'1.5px solid #93c5fd':'none',display:'inline-block'}}/>
+              {n!==null?`${n} `:''}  {s}
+            </span>
+          ))}
+        </div>
+        <div style={{flex:1,overflow:'auto',borderTop:`2px solid ${cat.light}`}}>
+          <ProblemTable cat={cat} line={line} issues={issues} setIssues={setIssues}
+            year={year} month={month}
+            currentPct={currentPct} goalVal={goalVal}
+            onSetGoal={v=>setGoals(prev=>({...prev,[goalKey]:v}))}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN BOARD ───────────────────────────────────────────────────────────────
+function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onSummary,goals,setGoals}){
+  const now=new Date();
+  const [year,  setYear]  =useState(now.getFullYear());
+  const [month, setMonth] =useState(now.getMonth());
+  const [lineIdx,setLineIdx]=useState(0);
+  const [modal,     setModal]    =useState(null);
+  const [showReset, setShowReset]=useState(false);
+  const [showLineEd,setShowLineEd]=useState(false);
+  const [catInfo,   setCatInfo]  =useState(null);
+  const [customLabels,setCustomLabels]=useState({S:[],Q:[],D:[],P:[]});
+
+  const line=lines[lineIdx]?.name||'Linia';
+
+  function prevM(){if(month===0){setYear(y=>y-1);setMonth(11);}else setMonth(m=>m-1);}
+  function nextM(){if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1);}
+
+  function handleToggle(ln,ds,catKey){
+    const k=eKey(ln,ds);
+    const cur=entries[k]?.[catKey]??null;
+    const next=CYCLE[cur];
+    onToggle(ln,ds,catKey,next,null,null);
+    const same=modal&&modal.line===ln&&modal.date===ds&&modal.catKey===catKey;
+    if((next==='yellow'||next==='red')&&!same) setModal({line:ln,date:ds,catKey});
+    else if((next===null||next==='green')&&same) setModal(null);
+  }
+
+  function handleSaveComment(val,loc){
+    if(modal){
+      const k=eKey(modal.line,modal.date);
+      const status=entries[k]?.[modal.catKey];
+      if(val.trim()||loc){
+        const existIdx=issues.findIndex(i=>i._ek===k&&i.area===modal.catKey);
+        if(existIdx>=0){
+          setIssues(prev=>prev.map((x,i)=>i===existIdx
+            ?{...x,title:val||x.title,location:loc||x.location,
+               status:status==='red'?'open':'in_progress',date:modal.date}:x));
+        } else {
+          setIssues(prev=>[{
+            id:`a-${Date.now()}`,_ek:k,area:modal.catKey,
+            title:val||'(brak opisu)',location:loc||'',
+            status:status==='red'?'open':'in_progress',
+            line:modal.line,date:modal.date,created:todayStr(),
+          },...prev]);
+        }
+      }
+      onToggle(modal.line,modal.date,modal.catKey,null,val,loc);
+    }
+    setModal(null);
+  }
+
+  function addCustomLabel(catKey,lbl){
+    setCustomLabels(prev=>({...prev,[catKey]:[...prev[catKey].filter(x=>x!==lbl),lbl]}));
+  }
+  function removeCustomLabel(catKey,lbl){
+    setCustomLabels(prev=>({...prev,[catKey]:prev[catKey].filter(x=>x!==lbl)}));
+  }
+  function doReset(){onReset(line,year,month);setShowReset(false);}
+
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden',background:'#f1f5f9'}}>
+      {/* ── TOP BAR ── */}
+      <div style={{background:'#0f172a',padding:'0.625rem 1.25rem',display:'flex',alignItems:'center',gap:'0.75rem',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:'0.4375rem'}}>
+          {['S','Q','D','P'].map((l,i)=>(
+            <div key={l} style={{width:'1.625rem',height:'1.625rem',borderRadius:'0.4375rem',
+              background:['#f59e0b','#10b981','#3b82f6','#ef4444'][i],
+              display:'flex',alignItems:'center',justifyContent:'center',
+              color:'white',fontWeight:900,fontSize:'0.75rem'}}>{l}</div>
+          ))}
+          <span style={{color:'white',fontWeight:800,fontSize:'1.125rem',marginLeft:'0.25rem',letterSpacing:2}}>TABLICA SQDP</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:'0.3125rem'}}>
+          {lines.map((l,i)=>(
+            <button key={l.id} onClick={()=>setLineIdx(i)}
+              style={{border:'2px solid',borderRadius:'0.5rem',padding:'0.3125rem 0.8125rem',fontSize:'0.8125rem',fontWeight:700,
+                cursor:'pointer',fontFamily:'inherit',
+                background:lineIdx===i?'rgba(255,255,255,0.15)':'transparent',
+                borderColor:lineIdx===i?'rgba(255,255,255,0.5)':'rgba(255,255,255,0.2)',
+                color:lineIdx===i?'white':'rgba(255,255,255,0.5)'}}>
+              {l.name}
+            </button>
+          ))}
+          <button onClick={()=>setShowLineEd(true)}
+            style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',
+              color:'rgba(255,255,255,0.5)',borderRadius:'0.4375rem',width:'1.625rem',height:'1.625rem',cursor:'pointer',
+              fontSize:'0.8125rem',display:'flex',alignItems:'center',justifyContent:'center'}}>⚙</button>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:'0.4375rem',marginLeft:'auto'}}>
+          <button onClick={prevM} style={{background:'rgba(255,255,255,0.1)',border:'none',color:'white',
+            width:'1.875rem',height:'1.875rem',borderRadius:'0.4375rem',cursor:'pointer',fontSize:'1.0rem',
+            display:'flex',alignItems:'center',justifyContent:'center'}}>‹</button>
+          <span style={{color:'white',fontWeight:700,fontSize:'0.875rem',minWidth:'6.5625rem',textAlign:'center'}}>
+            {MONTHS_PL[month]} {year}
+          </span>
+          <button onClick={nextM} style={{background:'rgba(255,255,255,0.1)',border:'none',color:'white',
+            width:'1.875rem',height:'1.875rem',borderRadius:'0.4375rem',cursor:'pointer',fontSize:'1.0rem',
+            display:'flex',alignItems:'center',justifyContent:'center'}}>›</button>
+        </div>
+        <button onClick={()=>setShowReset(true)}
+          style={{background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.4)',color:'#fca5a5',
+            borderRadius:'0.5rem',padding:'0.375rem 0.75rem',fontSize:'0.75rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+          🗑 Wyczyść miesiąc
+        </button>
+        {/* Switch to Summary */}
+        <button onClick={onSummary}
+          style={{background:'rgba(99,102,241,0.2)',border:'1px solid rgba(99,102,241,0.5)',color:'#a5b4fc',
+            borderRadius:'0.5rem',padding:'0.375rem 0.75rem',fontSize:'0.75rem',fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+            display:'flex',alignItems:'center',gap:'0.3125rem'}}>
+          📊 Podsumowanie
+        </button>
+      </div>
+
+      {/* ── BOARD ── */}
+      <div style={{flex:1,overflowY:'auto',padding:'0.75rem 1rem'}}>
+        {/* Centred wrapper — caps total board width on ultra-wide / 50" screens */}
+        <div style={{
+          display:'flex',
+          gap:'0.75rem',
+          alignItems:'flex-start',
+          maxWidth:'1600px',      /* board never wider than 1600px */
+          margin:'0 auto',        /* centre on very wide screens */
+          width:'100%',
+        }}>
+          {CATS.map(cat=>(
+            <SqdpColumn key={cat.key} cat={cat} year={year} month={month} line={line}
+              entries={entries} issues={issues} setIssues={setIssues}
+              onToggle={handleToggle} onCatClick={()=>setCatInfo(cat.key)}
+              goals={goals} setGoals={setGoals}/>
+          ))}
+        </div>
+      </div>
+
+      {/* Bottom tip */}
+      <div style={{background:'#f0f9ff',borderTop:'1px solid #bae6fd',padding:'0.375rem 1.0rem',
+        fontSize:'0.6875rem',color:'#0369a1',flexShrink:0,display:'flex',alignItems:'center',gap:'0.625rem',flexWrap:'wrap'}}>
+        <span>💡 Segment →
+          <b> szary</b> →
+          <span style={{color:'#10b981',fontWeight:700}}> zielony</span> →
+          <span style={{color:'#f59e0b',fontWeight:700}}> żółty</span> →
+          <span style={{color:'#ef4444',fontWeight:700}}> czerwony</span> → szary
+        </span>
+        <span style={{color:'#cbd5e1'}}>|</span>
+        <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}}>
+          <span style={{width:9,height:9,borderRadius:'50%',background:'#bfdbfe',
+            border:'1.5px solid #93c5fd',display:'inline-block'}}/>
+          <span style={{color:'#1e40af',fontWeight:600}}>Niebieski = So/Nd</span>
+        </span>
+        <span style={{color:'#cbd5e1'}}>|</span>
+        <span>Kliknij nagłówek S/Q/D/P → opis. Kliknij tekst problemu → edycja.</span>
+      </div>
+
+      {/* MODALS */}
+      {modal&&<CommentModal info={modal} entries={entries} onSave={handleSaveComment}
+        onClose={()=>setModal(null)} customLabels={customLabels}
+        onAddLabel={addCustomLabel} onRemoveLabel={removeCustomLabel}/>}
+      {showReset&&<ResetModal year={year} month={month} line={line}
+        onConfirm={doReset} onClose={()=>setShowReset(false)}/>}
+      {showLineEd&&<LineEditorModal lines={lines}
+        onSave={nl=>{setLines(nl);setLineIdx(0);setShowLineEd(false);}}
+        onClose={()=>setShowLineEd(false)}/>}
+      {catInfo&&<CatInfoModal catKey={catInfo} onClose={()=>setCatInfo(null)}/>}
+    </div>
+  );
+}
+
+// ─── HISTORICAL DATA from ODS (Unisystem) ────────────────────────────────────
+const HIST_UNISYSTEM = [
+  {year:2025,month:3,  S:0.952,Q:0.9985,D:1.0,  P:1.0,  razem:0.9876,wyd_poz:673,wyd_dok:361,pomylki:1,przyjecia_poz:415,przyjecia_dok:142},
+  {year:2025,month:4,  S:null, Q:null,  D:null, P:null,  razem:null,  wyd_poz:641,wyd_dok:338,pomylki:null,przyjecia_poz:423,przyjecia_dok:136},
+  {year:2025,month:5,  S:1.0,  Q:0.998, D:1.0,  P:1.0,  razem:0.9993,wyd_poz:536,wyd_dok:305,pomylki:1,przyjecia_poz:278,przyjecia_dok:114},
+  {year:2025,month:6,  S:1.0,  Q:0.998, D:1.0,  P:1.0,  razem:0.9893,wyd_poz:620,wyd_dok:339,pomylki:1,przyjecia_poz:417,przyjecia_dok:136},
+  {year:2025,month:7,  S:1.0,  Q:0.998, D:0.995,P:1.0,  razem:0.987, wyd_poz:523,wyd_dok:299,pomylki:1,przyjecia_poz:331,przyjecia_dok:99},
+  {year:2025,month:8,  S:1.0,  Q:1.0,   D:1.0,  P:1.0,  razem:1.0,   wyd_poz:554,wyd_dok:319,pomylki:0,przyjecia_poz:376,przyjecia_dok:123},
+  {year:2025,month:9,  S:1.0,  Q:0.998, D:1.0,  P:1.0,  razem:0.9995,wyd_poz:631,wyd_dok:335,pomylki:1,przyjecia_poz:341,przyjecia_dok:117},
+  {year:2025,month:10, S:1.0,  Q:0.996, D:1.0,  P:1.0,  razem:0.999, wyd_poz:484,wyd_dok:294,pomylki:2,przyjecia_poz:323,przyjecia_dok:112},
+  {year:2025,month:11, S:1.0,  Q:0.998, D:1.0,  P:1.0,  razem:0.9995,wyd_poz:459,wyd_dok:281,pomylki:1,przyjecia_poz:283,przyjecia_dok:113},
+  {year:2026,month:0,  S:1.0,  Q:1.0,   D:1.0,  P:1.0,  razem:1.0,   wyd_poz:619,wyd_dok:329,pomylki:0,przyjecia_poz:299,przyjecia_dok:106},
+  {year:2026,month:1,  S:0.95, Q:1.0,   D:1.0,  P:1.0,  razem:0.988, wyd_poz:525,wyd_dok:303,pomylki:0,przyjecia_poz:375,przyjecia_dok:115},
+  {year:2026,month:2,  S:1.0,  Q:0.996, D:0.9963,P:1.0, razem:0.998, wyd_poz:505,wyd_dok:276,pomylki:2,przyjecia_poz:275,przyjecia_dok:102},
+];
+
+// ─── SUMMARY SCREEN ───────────────────────────────────────────────────────────
+function Summary({entries, lines, onBoard}) {
+  const now = new Date();
+  const [summLine, setSummLine] = useState(lines[0]?.name || 'Unisystem');
+  // Extra columns state — editable per row
+  const [extraCols, setExtraCols] = useState([
+    {id:'c1', label:'Przyjęcia ilość pozycji'},
+    {id:'c2', label:'Przyjęcia ilość dokumentów'},
+    {id:'c3', label:'Uwagi'},
+  ]);
+  const [extraData, setExtraData] = useState({}); // key: `${line}-${year}-${month}-${colId}`
+  const [editingCol, setEditingCol] = useState(null);
+  const [newColLabel, setNewColLabel] = useState('');
+
+  // Build list of months to show — historical + live from entries
+  // Collect all unique year-month from entries for this line
+  const entryMonths = new Set();
+  Object.values(entries).forEach(e => {
+    if (e.line === summLine) {
+      const [y,m] = e.date.split('-').map(Number);
+      entryMonths.add(`${y}-${m-1}`); // m-1 = 0-indexed month
+    }
+  });
+
+  // Merge historical rows with live rows
+  function calcKpiFromEntries(line, year, month) {
+    const ms = `${year}-${String(month+1).padStart(2,'0')}`;
+    const list = Object.values(entries).filter(e => e.date.startsWith(ms) && e.line === line);
+    if (!list.length) return null;
+    const n = list.length;
+    const pct = k => Math.round(list.filter(e => e[k]==='green').length / n * 10000) / 10000;
+    const S=pct('S'), Q=pct('Q'), D=pct('D'), P=pct('P');
+    const razem = Math.round((S+Q+D+P)/4*10000)/10000;
+    return {S,Q,D,P,razem};
+  }
+
+  // All rows: historical + any live months not in history
+  const allRows = (() => {
+    const rows = [];
+    const hist = HIST_UNISYSTEM; // for now same for both lines — in real app would be per line
+    hist.forEach(h => {
+      const live = calcKpiFromEntries(summLine, h.year, h.month);
+      rows.push({...h, live, isLive: false, key:`${h.year}-${h.month}`});
+    });
+    // Add live months not in historical data
+    entryMonths.forEach(ym => {
+      const [y, m] = ym.split('-').map(Number);
+      if (!hist.find(h => h.year===y && h.month===m)) {
+        const live = calcKpiFromEntries(summLine, y, m);
+        if (live) rows.push({year:y, month:m, live, isLive:true,
+          S:null,Q:null,D:null,P:null,razem:null,
+          wyd_poz:null,wyd_dok:null,pomylki:null,
+          przyjecia_poz:null,przyjecia_dok:null,
+          key:`${y}-${m}`});
+      }
+    });
+    rows.sort((a,b) => a.year!==b.year ? a.year-b.year : a.month-b.month);
+    return rows;
+  })();
+
+  // For a row, get the effective S/Q/D/P — prefer live data if available
+  function getKpi(row) {
+    const live = calcKpiFromEntries(summLine, row.year, row.month);
+    if (live) return live;
+    if (row.S !== null) return {S:row.S, Q:row.Q, D:row.D, P:row.P, razem:row.razem};
+    return null;
+  }
+
+  function fPct(v) {
+    if (v === null || v === undefined || isNaN(v)) return '–';
+    const pct = v <= 1 ? v * 100 : v;
+    return `${pct.toFixed(2)}%`;
+  }
+  function fNum(v) { return v===null||v===undefined ? '' : String(v); }
+
+  function pctColor(v) {
+    if (!v && v!==0) return '#64748b';
+    const pct = v<=1 ? v*100 : v;
+    return pct >= 99 ? '#059669' : pct >= 95 ? '#d97706' : '#dc2626';
+  }
+
+  // Poprawność wydań = (wyd_poz - pomylki) / wyd_poz * 100
+  // Wzór: Liczba poprawnie skompletowanych jednostek / Całkowita liczba skompletowanych jednostek × 100%
+  function calcPoprawnosc(row) {
+    const poz = parseFloat(row.wyd_poz);
+    const pom = parseFloat(row.pomylki ?? 0);
+    if (!poz || isNaN(poz)) return null;
+    return (poz - (isNaN(pom) ? 0 : pom)) / poz;
+  }
+
+  function updateCell(rowKey, field, val) {
+    setExtraData(prev => ({...prev, [`${summLine}-${rowKey}-${field}`]: val}));
+  }
+  function getCell(rowKey, field) {
+    return extraData[`${summLine}-${rowKey}-${field}`] ?? '';
+  }
+  function getHistCell(row, field) {
+    if (field === 'c1') return row.przyjecia_poz !== null ? fNum(row.przyjecia_poz) : '';
+    if (field === 'c2') return row.przyjecia_dok !== null ? fNum(row.przyjecia_dok) : '';
+    return getCell(row.key, field);
+  }
+
+  function addColumn() {
+    if (!newColLabel.trim()) return;
+    setExtraCols(prev => [...prev, {id:`c${Date.now()}`, label:newColLabel.trim()}]);
+    setNewColLabel('');
+  }
+  function removeColumn(id) {
+    setExtraCols(prev => prev.filter(c => c.id !== id));
+  }
+
+  // Fixed columns definition
+  const fixedCols = [
+    {id:'S',   label:'S',      tooltip:'Safety %'},
+    {id:'Q',   label:'Q',      tooltip:'Quality %'},
+    {id:'D',   label:'D',      tooltip:'Delivery %'},
+    {id:'P',   label:'P',      tooltip:'Production %'},
+    {id:'razem',label:'RAZEM', tooltip:'Średnia S+Q+D+P'},
+    {id:'wyd_poz', label:'Wydania\nilość pozycji',   tooltip:'Liczba pozycji na dokumentach RW/MMW'},
+    {id:'wyd_dok', label:'Wydania\nilość dok.',       tooltip:'Liczba dokumentów RW/MMW'},
+    {id:'pomylki', label:'Pomyłki\nwydań',            tooltip:'Liczba błędnych pozycji'},
+    {id:'poprawnosc', label:'Poprawność\nwydań %',   tooltip:'= (pozycje − pomyłki) / pozycje × 100%'},
+  ];
+
+  const thStyle = {
+    padding:'0.5rem 0.625rem', fontSize:'0.6875rem', fontWeight:700, color:'#fff',
+    textAlign:'center', verticalAlign:'bottom', whiteSpace:'pre-line',
+    lineHeight:1.3, border:'1px solid rgba(255,255,255,0.2)',
+  };
+  const tdStyle = {
+    padding:'0.4375rem 0.625rem', fontSize:'0.75rem', textAlign:'center',
+    border:'1px solid #e2e8f0', verticalAlign:'middle',
+  };
+  const inputStyle = {
+    width:'100%', border:'1px solid #e2e8f0', borderRadius:'0.375rem',
+    padding:'0.25rem 0.375rem', fontSize:'0.75rem', fontFamily:'inherit',
+    textAlign:'center', outline:'none', background:'transparent',
+    boxSizing:'border-box',
+  };
+
+  return (
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden',background:'#f1f5f9'}}>
+      {/* Top bar */}
+      <div style={{background:'#0f172a',padding:'0.625rem 1.25rem',display:'flex',alignItems:'center',
+        gap:'0.75rem',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:'0.4375rem'}}>
+          {['S','Q','D','P'].map((l,i)=>(
+            <div key={l} style={{width:'1.625rem',height:'1.625rem',borderRadius:'0.4375rem',
+              background:['#f59e0b','#10b981','#3b82f6','#ef4444'][i],
+              display:'flex',alignItems:'center',justifyContent:'center',
+              color:'white',fontWeight:900,fontSize:'0.75rem'}}>{l}</div>
+          ))}
+          <span style={{color:'white',fontWeight:800,fontSize:'1.125rem',marginLeft:'0.25rem',letterSpacing:2}}>TABLICA SQDP</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:'0.3125rem'}}>
+          {lines.map(l=>(
+            <button key={l.id} onClick={()=>setSummLine(l.name)}
+              style={{border:'2px solid',borderRadius:'0.5rem',padding:'0.3125rem 0.8125rem',fontSize:'0.8125rem',fontWeight:700,
+                cursor:'pointer',fontFamily:'inherit',
+                background:summLine===l.name?'rgba(255,255,255,0.15)':'transparent',
+                borderColor:summLine===l.name?'rgba(255,255,255,0.5)':'rgba(255,255,255,0.2)',
+                color:summLine===l.name?'white':'rgba(255,255,255,0.5)'}}>
+              {l.name}
+            </button>
+          ))}
+        </div>
+        <span style={{color:'rgba(255,255,255,0.4)',fontSize:'0.8125rem',marginLeft:'0.5rem'}}>
+          📊 Podsumowanie roczne
+        </span>
+        <button onClick={onBoard}
+          style={{marginLeft:'auto',background:'rgba(255,255,255,0.08)',
+            border:'1px solid rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.7)',
+            borderRadius:'0.5rem',padding:'0.375rem 0.875rem',fontSize:'0.75rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+          ← Wróć do tablicy
+        </button>
+      </div>
+
+      {/* Main content */}
+      <div style={{flex:1,overflowY:'auto',padding:'1.25rem 1.25rem 1.5rem'}}>
+        {/* Title */}
+        <div style={{marginBottom:'1.25rem'}}>
+          <h2 style={{margin:0,fontSize:'1.25rem',fontWeight:900,color:'#0f172a'}}>
+            📊 Podsumowanie — {summLine}
+          </h2>
+          <p style={{margin:'0.25rem 0 0',fontSize:'0.75rem',color:'#64748b'}}>
+            Dane historyczne + aktualne z tablicy SQDP. Kolumny niebieskie pobierane dynamicznie z tablicy.
+            Pozostałe pola edytowalne ręcznie.
+          </p>
+        </div>
+
+        {/* Table */}
+        <div style={{overflowX:'auto',background:'white',borderRadius:'1.0rem',
+          boxShadow:'0 2px 12px rgba(0,0,0,0.07)',border:'1px solid #e2e8f0'}}>
+          <table style={{borderCollapse:'collapse',width:'100%',minWidth:'56.25rem'}}>
+            <thead>
+              <tr style={{background:'#0f172a'}}>
+                <th style={{...thStyle,textAlign:'left',minWidth:'5.625rem'}}>Rok</th>
+                <th style={{...thStyle,textAlign:'left',minWidth:'5.625rem'}}>Miesiąc</th>
+                {/* S Q D P RAZEM — blue tint = live from board */}
+                {['S','Q','D','P'].map(k=>(
+                  <th key={k} style={{...thStyle,background:
+                    {S:'#92400e',Q:'#065f46',D:'#1e3a8a',P:'#7f1d1d'}[k],minWidth:'4.0rem'}}>
+                    {k}
+                  </th>
+                ))}
+                <th style={{...thStyle,background:'#1e293b',minWidth:'4.5rem'}}>RAZEM</th>
+                <th style={{...thStyle,minWidth:'5.0rem'}}>{'Wydania\nilość\npozycji'}</th>
+                <th style={{...thStyle,minWidth:'4.5rem'}}>{'Wydania\nilość\ndok.'}</th>
+                <th style={{...thStyle,background:'#7f1d1d',minWidth:'4.5rem'}}>{'Pomyłki\nwydań'}</th>
+                <th style={{...thStyle,background:'#064e3b',minWidth:'5.5rem'}}>{'Poprawność\nwydań %'}</th>
+                {/* Extra editable columns */}
+                {extraCols.map(c=>(
+                  <th key={c.id} style={{...thStyle,minWidth:'5.625rem',position:'relative'}}>
+                    {editingCol===c.id?(
+                      <input value={c.label}
+                        onChange={e=>setExtraCols(prev=>prev.map(x=>x.id===c.id?{...x,label:e.target.value}:x))}
+                        onBlur={()=>setEditingCol(null)}
+                        onKeyDown={e=>e.key==='Enter'&&setEditingCol(null)}
+                        autoFocus
+                        style={{...inputStyle,color:'#0f172a',background:'white',borderRadius:'0.25rem',padding:'0.1875rem 0.3125rem'}}/>
+                    ):(
+                      <span style={{cursor:'pointer',display:'block',whiteSpace:'pre-line',lineHeight:1.3}}
+                        onClick={()=>setEditingCol(c.id)}
+                        title="Kliknij aby edytować nazwę">
+                        {c.label}
+                        <span style={{opacity:0.5,fontSize:'0.5625rem',display:'block'}}>✎</span>
+                      </span>
+                    )}
+                    <button onClick={()=>removeColumn(c.id)}
+                      title="Usuń kolumnę"
+                      style={{position:'absolute',top:2,right:2,background:'rgba(255,255,255,0.15)',
+                        border:'none',borderRadius:'50%',width:14,height:14,cursor:'pointer',
+                        color:'white',fontSize:'0.5625rem',lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      ×
+                    </button>
+                  </th>
+                ))}
+                <th style={{...thStyle,minWidth:'5.0rem'}}>
+                  <button onClick={()=>setNewColLabel('Nowa kolumna')}
+                    style={{background:'rgba(255,255,255,0.12)',border:'1px dashed rgba(255,255,255,0.4)',
+                      borderRadius:'0.5rem',padding:'0.25rem 0.5rem',color:'rgba(255,255,255,0.7)',
+                      cursor:'pointer',fontSize:'0.6875rem',fontFamily:'inherit'}}>
+                    ＋ kolumna
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {allRows.map((row, ri) => {
+                const kpi = getKpi(row);
+                const pop = calcPoprawnosc(row);
+                const isEven = ri % 2 === 0;
+                const rowBg = isEven ? '#f8fafc' : 'white';
+                // Is this the current month with live data?
+                const liveKpi = calcKpiFromEntries(summLine, row.year, row.month);
+                const hasLive = !!liveKpi;
+
+                return (
+                  <tr key={row.key} style={{background:rowBg}}>
+                    <td style={{...tdStyle,fontWeight:700,color:'#1e293b',textAlign:'left'}}>
+                      {row.year}
+                    </td>
+                    <td style={{...tdStyle,fontWeight:600,color:'#1e293b',textAlign:'left'}}>
+                      {MONTHS_PL[row.month]}
+                      {hasLive&&<span style={{marginLeft:'0.375rem',fontSize:'0.625rem',background:'#dbeafe',
+                        color:'#1e40af',padding:'0.0625rem 0.3125rem',borderRadius:'0.5rem',fontWeight:700}}>live</span>}
+                    </td>
+                    {/* S Q D P */}
+                    {['S','Q','D','P'].map(k=>{
+                      const v = kpi?.[k];
+                      return (
+                        <td key={k} style={{...tdStyle,
+                          background:hasLive?'#eff6ff':rowBg,
+                          fontWeight:700,color:pctColor(v)}}>
+                          {fPct(v)}
+                        </td>
+                      );
+                    })}
+                    {/* RAZEM */}
+                    <td style={{...tdStyle,fontWeight:800,
+                      background:hasLive?'#eff6ff':rowBg,
+                      color:pctColor(kpi?.razem)}}>
+                      {fPct(kpi?.razem)}
+                    </td>
+                    {/* Wydania pozycji — editable */}
+                    <td style={{...tdStyle}}>
+                      <input
+                        value={getCell(row.key,'wyd_poz') || fNum(row.wyd_poz)}
+                        onChange={e=>updateCell(row.key,'wyd_poz',e.target.value)}
+                        style={inputStyle} placeholder="—"/>
+                    </td>
+                    {/* Wydania dok — editable */}
+                    <td style={{...tdStyle}}>
+                      <input
+                        value={getCell(row.key,'wyd_dok') || fNum(row.wyd_dok)}
+                        onChange={e=>updateCell(row.key,'wyd_dok',e.target.value)}
+                        style={inputStyle} placeholder="—"/>
+                    </td>
+                    {/* Pomyłki — editable */}
+                    <td style={{...tdStyle}}>
+                      <input
+                        value={getCell(row.key,'pomylki') || fNum(row.pomylki)}
+                        onChange={e=>updateCell(row.key,'pomylki',e.target.value)}
+                        style={{...inputStyle,
+                          color: (getCell(row.key,'pomylki')||row.pomylki)>0?'#dc2626':'inherit',
+                          fontWeight: (getCell(row.key,'pomylki')||row.pomylki)>0?700:400}}
+                        placeholder="0"/>
+                    </td>
+                    {/* Poprawność — calculated: (pozycje − pomyłki) / pozycje × 100% */}
+                    <td style={{...tdStyle,fontWeight:700,
+                      background:'#f0fdf4',
+                      color:pctColor(pop)}}>
+                      {(() => {
+                        // Get effective values: edited cell takes priority over historical
+                        const editedPoz = getCell(row.key,'wyd_poz');
+                        const editedPom = getCell(row.key,'pomylki');
+                        const pozVal = editedPoz !== '' ? editedPoz : row.wyd_poz;
+                        const pomVal = editedPom !== '' ? editedPom : (row.pomylki ?? 0);
+                        const poz = parseFloat(pozVal);
+                        const pom = parseFloat(pomVal ?? 0);
+                        if (!poz || isNaN(poz)) return fPct(pop); // fallback to historical poprawnosc
+                        const calc = (poz - (isNaN(pom)?0:pom)) / poz;
+                        return fPct(calc);
+                      })()}
+                    </td>
+                    {/* Extra columns */}
+                    {extraCols.map(c=>(
+                      <td key={c.id} style={{...tdStyle}}>
+                        <input
+                          value={getHistCell(row, c.id)}
+                          onChange={e=>updateCell(row.key,c.id,e.target.value)}
+                          style={inputStyle} placeholder="—"/>
+                      </td>
+                    ))}
+                    <td style={{...tdStyle}}/>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Add column form */}
+        {newColLabel !== '' && (
+          <div style={{display:'flex',gap:'0.5rem',marginTop:'0.75rem',alignItems:'center'}}>
+            <span style={{fontSize:'0.8125rem',color:'#64748b',fontWeight:600}}>Nazwa nowej kolumny:</span>
+            <input value={newColLabel} onChange={e=>setNewColLabel(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&addColumn()}
+              style={{border:'1.5px solid #e2e8f0',borderRadius:'0.5rem',padding:'0.4375rem 0.75rem',
+                fontSize:'0.8125rem',fontFamily:'inherit',outline:'none',width:220}}
+              autoFocus/>
+            <button onClick={addColumn}
+              style={{background:'#0f172a',color:'white',border:'none',borderRadius:'0.5rem',
+                padding:'0.4375rem 1.0rem',fontWeight:700,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>
+              Dodaj
+            </button>
+            <button onClick={()=>setNewColLabel('')}
+              style={{background:'white',color:'#64748b',border:'1.5px solid #e2e8f0',borderRadius:'0.5rem',
+                padding:'0.4375rem 0.75rem',fontWeight:600,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>
+              Anuluj
+            </button>
+          </div>
+        )}
+
+        {/* ── FORMULA EXPLANATION ── */}
+        <div style={{marginTop:'1.5rem',background:'white',borderRadius:'1.0rem',
+          boxShadow:'0 2px 12px rgba(0,0,0,0.06)',border:'1px solid #e2e8f0',padding:24}}>
+          <h3 style={{margin:'0 0 1.0rem',fontSize:'1.0rem',fontWeight:800,color:'#0f172a'}}>
+            📐 Wzory i objaśnienia
+          </h3>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1.0rem'}}>
+            {/* Poprawność wydań */}
+            <div style={{background:'#f0fdf4',borderRadius:'0.75rem',padding:16,border:'1px solid #bbf7d0'}}>
+              <div style={{fontWeight:800,fontSize:'0.875rem',color:'#065f46',marginBottom:'0.5rem'}}>
+                ✅ Poprawność wydań (Quality)
+              </div>
+              <div style={{fontFamily:'monospace',fontSize:'0.8125rem',background:'white',
+                borderRadius:'0.5rem',padding:'0.625rem 0.875rem',border:'1px solid #d1fae5',
+                color:'#065f46',fontWeight:600,marginBottom:'0.5rem'}}>
+                = (Pozycje − Pomyłki) ÷ Pozycje × 100%
+              </div>
+              <div style={{fontSize:'0.75rem',color:'#374151',lineHeight:1.6}}>
+                <strong>Przykład:</strong> 505 pozycji, 2 pomyłki<br/>
+                = (505 − 2) ÷ 505 × 100% = <strong>99,60%</strong><br/>
+                <br/>
+                Podstawą jest liczba <strong>pozycji (linii)</strong> na dokumentach RW/MMW,
+                ponieważ każda pozycja stanowi osobną okazję do popełnienia błędu.
+              </div>
+            </div>
+            {/* RAZEM */}
+            <div style={{background:'#eff6ff',borderRadius:'0.75rem',padding:16,border:'1px solid #bfdbfe'}}>
+              <div style={{fontWeight:800,fontSize:'0.875rem',color:'#1e3a8a',marginBottom:'0.5rem'}}>
+                📊 Wskaźnik RAZEM (średnia S+Q+D+P)
+              </div>
+              <div style={{fontFamily:'monospace',fontSize:'0.8125rem',background:'white',
+                borderRadius:'0.5rem',padding:'0.625rem 0.875rem',border:'1px solid #dbeafe',
+                color:'#1e3a8a',fontWeight:600,marginBottom:'0.5rem'}}>
+                = (S + Q + D + P) ÷ 4
+              </div>
+              <div style={{fontSize:'0.75rem',color:'#374151',lineHeight:1.6}}>
+                Prosta średnia arytmetyczna czterech wskaźników.<br/>
+                <strong>Kolor wskaźnika:</strong><br/>
+                <span style={{color:'#059669',fontWeight:700}}>● Zielony</span> ≥ 99,0% &nbsp;
+                <span style={{color:'#d97706',fontWeight:700}}>● Żółty</span> ≥ 95,0% &nbsp;
+                <span style={{color:'#dc2626',fontWeight:700}}>● Czerwony</span> &lt; 95,0%
+              </div>
+            </div>
+          </div>
+          {/* Column legend */}
+          <div style={{marginTop:'1.0rem',padding:'0.75rem 1.0rem',background:'#f8fafc',
+            borderRadius:'0.625rem',border:'1px solid #e2e8f0'}}>
+            <div style={{fontWeight:700,fontSize:'0.75rem',color:'#64748b',
+              textTransform:'uppercase',letterSpacing:1,marginBottom:'0.5rem'}}>Legenda kolumn</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:'0.625rem',fontSize:'0.75rem',color:'#374151'}}>
+              {[
+                {bg:'#eff6ff',text:'Niebieskie tło = dane pobierane automatycznie z tablicy SQDP (live)'},
+                {bg:'#f0fdf4',text:'Zielone tło = wartość wyliczona automatycznie ze wzoru'},
+                {bg:'white',text:'Białe/szare = dane wpisywane ręcznie z systemu WMS/ERP'},
+                {bg:'#fef3c7',text:'Badge "live" = miesiąc ma aktualne dane z tablicy'},
+              ].map(({bg,text},i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:'0.4375rem'}}>
+                  <span style={{width:14,height:14,background:bg,borderRadius:3,
+                    border:'1px solid #e2e8f0',display:'inline-block',flexShrink:0}}/>
+                  <span>{text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ROOT ─────────────────────────────────────────────────────────────────
+function App(){
+  const [entries,setEntries]=useState(makeSeedEntries);
+  const [issues, setIssues] =useState([]);
+  const [lines,  setLines]  =useState([{id:'l1',name:'Unisystem'},{id:'l2',name:'Riverdi'}]);
+  const [view,   setView]   =useState('board');
+  // Goals: {`${line}-${year}-${month}-${catKey}`: number (0-100)}
+  const [goals, setGoals] = useState({}); // 'board' | 'summary'
+
+  const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
+    setEntries(prev=>{
+      const k=eKey(line,dateStr);
+      const ex=prev[k]||{id:k,date:dateStr,line,
+        S:null,Q:null,D:null,P:null,
+        comments:{S:',Q:',D:',P:'},
+        locations:{S:',Q:',D:',P:'}};
+      return{...prev,[k]:{...ex,
+        [catKey]: nextStatus!==null&&comment===null?nextStatus:ex[catKey],
+        comments:{...ex.comments,
+          [catKey]:comment!==null?comment:
+            (nextStatus==='green'||nextStatus===null?'':ex.comments[catKey])},
+        locations:{...ex.locations,
+          [catKey]:loc!==null&&loc!==undefined?loc:ex.locations[catKey]},
+      }};
+    });
+  },[]);
+
+  const handleReset=useCallback((line,year,month)=>{
+    const ms=`${year}-${String(month+1).padStart(2,'0')}`;
+    setEntries(prev=>{
+      const n={...prev};
+      Object.keys(n).forEach(k=>{if(n[k].line===line&&n[k].date.startsWith(ms))delete n[k];});
+      return n;
+    });
+  },[]);
+
+  const [uiScale, setUiScale] = useState(1.0); // 1.0 = normal, 1.25 = large, 1.5 = XL
+
+  return(
+    <div
+      className="sqdp-root"
+      style={{
+        fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+        height:'100vh',overflow:'hidden',display:'flex',flexDirection:'column',
+        /* clamp = naturalne skalowanie; przełącznik nadpisuje przez inline style */
+        fontSize: uiScale !== 1.0 ? `${uiScale * 14}px` : undefined,
+      }}>
+      {/* Scale selector bar */}
+      <div style={{background:'#020617',padding:'3px 16px',display:'flex',
+        alignItems:'center',justifyContent:'flex-end',gap:6,flexShrink:0,
+        borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+        <span style={{color:'rgba(255,255,255,0.28)',fontSize:10,marginRight:4}}>
+          🖥 Rozmiar:
+        </span>
+        {[
+          {val:0.85, label:'S', desc:'Mały — laptopy 13-15"'},
+          {val:1.0,  label:'M', desc:'Auto — clamp() skaluje naturalnie (domyślny)'},
+          {val:1.2,  label:'L', desc:'Duży — monitory 32-40"'},
+          {val:1.45, label:'XL',desc:'Bardzo duży — ekrany 50"+ / hale produkcyjne'},
+        ].map(opt=>(
+          <button key={opt.val} onClick={()=>setUiScale(opt.val)}
+            title={opt.desc}
+            style={{
+              background: uiScale===opt.val ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.04)',
+              border: uiScale===opt.val ? '1px solid rgba(99,102,241,0.7)' : '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 5,
+              color: uiScale===opt.val ? '#a5b4fc' : 'rgba(255,255,255,0.3)',
+              fontSize: 10, fontWeight: uiScale===opt.val ? 800 : 400,
+              padding: '2px 9px', cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+            {opt.label}
+          </button>
+        ))}
+        <span style={{color:'rgba(255,255,255,0.12)',fontSize:10,marginLeft:6}}>
+          Ctrl+scroll = zoom
+        </span>
+      </div>
+      {/* Global nav placeholder */}
+      <div style={{height:0}}/>
+      {view==='board'?(
+        <MainBoard entries={entries} onToggle={handleToggle} onReset={handleReset}
+          issues={issues} setIssues={setIssues} lines={lines} setLines={setLines}
+          goals={goals} setGoals={setGoals}
+          uiScale={uiScale}
+          onSummary={()=>setView('summary')}/>
+      ):(
+        <Summary entries={entries} lines={lines} onBoard={()=>setView('board')}/>
+      )}
+      <style>{`
+        *{box-sizing:border-box;} body{margin:0;}
+        ::-webkit-scrollbar{width:5px;height:5px;}
+        ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+        input:focus,textarea:focus,select:focus{outline:2px solid #3b82f6!important;border-color:#3b82f6!important;}
+
+        /* ── Responsive font scaling ─────────────────────────────────────
+           Zamiast twardych px, używamy clamp() + vw żeby interfejs
+           naturalnie skalował się między monitorami bez przełącznika.
+           
+           clamp(min, preferred, max):
+           - min  = najmniejsszy akceptowalny rozmiar (laptop)
+           - vw   = relatywny do szerokości ekranu (rośnie z monitorem)
+           - max  = sufit — na 50" nie przerośnie tej wartości
+           
+           Efekt: 21" ~14px, 27" ~15px, 32" ~16px, 50" max 18px
+        ──────────────────────────────────────────────────────────────── */
+        .sqdp-root {
+          font-size: clamp(13px, 0.85vw, 17px);
+        }
+
+        /* Nadpisanie z przełącznika S/M/L/XL ma wyższy priorytet */
+        .sqdp-root[data-scale] {
+          font-size: var(--ui-scale-size) !important;
+        }
+
+        /* Board columns — na wąskich ekranach kolumny mogą być mniejsze */
+        @media (max-width: 1400px) {
+          .sqdp-column { max-width: 340px !important; }
+          .sqdp-ring-wrap { max-width: 300px !important; }
+        }
+        @media (min-width: 2560px) {
+          /* 4K / bardzo duże monitory — kolumny mogą być trochę szersze */
+          .sqdp-column { max-width: 440px !important; }
+          .sqdp-ring-wrap { max-width: 400px !important; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
