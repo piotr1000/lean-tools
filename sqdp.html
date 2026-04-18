@@ -7,15 +7,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<style>
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 0; }
-</style>
+<style>* { box-sizing: border-box; } body { margin: 0; padding: 0; }</style>
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel">
+<script type="text/babel" data-presets="react">
 const { useState, useCallback, useRef, useEffect } = React;
+
 
 // ─── SEED DATA ────────────────────────────────────────────────────────────────
 function makeSeedEntries() {
@@ -30,8 +28,8 @@ function makeSeedEntries() {
       const k=`${line}-${ds}`;
       out[k]={id:k,date:ds,line,
         S:'green',Q:redQ.includes(d)?'red':'green',D:redD.includes(d)?'red':'green',P:'green',
-        comments:{S:'',Q:redQ.includes(d)?'Błąd jakościowy':'',D:redD.includes(d)?'Opóźnienie':',P:'},
-        locations:{S:',Q:',D:',P:'}};
+        comments:{S:'',Q:redQ.includes(d)?'Błąd jakościowy':'',D:redD.includes(d)?'Opóźnienie':'',P:''},
+        locations:{S:'',Q:'',D:'',P:''}};
     }
   });
   return out;
@@ -46,20 +44,26 @@ const DEFAULT_LABELS={
   P:['Przestój maszyny','Plan niewykonany','Brak materiału','Niski wolumen'],
 };
 
-// Location options — where did the issue occur
-const LOCATION_OPTIONS = [
-  {value:'',        label:'— Wybierz miejsce —'},
-  {value:'magazyn_przyjecie', label:'Magazyn — przyjęcie towaru'},
-  {value:'magazyn_kompletacja',label:'Magazyn — kompletacja / zbieranie'},
-  {value:'magazyn_wydanie',   label:'Magazyn — wydanie na produkcję'},
-  {value:'produkcja',         label:'Produkcja — linia produkcyjna'},
-  {value:'wysylka_klient',    label:'Wysyłka — do klienta'},
-  {value:'inne',              label:'Inne'},
+// ─── LOKALIZACJE — domyślne, w pełni konfigurowalne ─────────────────────────
+// type: 'client'/'prod' = wbudowane typy statystyk (wsteczna kompatybilność)
+//       dowolny string  = własna kategoria statystyk
+//       'other'         = tylko tabela, bez statystyk
+// statLabel: czytelna nazwa kategorii w kafelku statystyk
+const DEFAULT_LOCATIONS = [
+  {id:'loc_mag_prz',  label:'Magazyn — przyjęcie towaru',    type:'other',  statLabel:null},
+  {id:'loc_mag_komp', label:'Magazyn — kompletacja',         type:'other',  statLabel:null},
+  {id:'loc_mag_wyd',  label:'Magazyn — wydanie na produkcję',type:'prod',   statLabel:'Błędy na produkcję'},
+  {id:'loc_produkcja',label:'Produkcja — linia produkcyjna', type:'prod',   statLabel:'Błędy na produkcję'},
+  {id:'loc_wysylka',  label:'Wysyłka — do klienta',          type:'client', statLabel:'Błędy do klienta'},
+  {id:'loc_inne',     label:'Inne',                          type:'other',  statLabel:null},
 ];
 
-// Which locations count as "do klienta" vs "na produkcję"
-const LOC_CLIENT = ['wysylka_klient'];
-const LOC_PROD   = ['magazyn_wydanie','produkcja'];
+// Kolory dla wbudowanych typów; własne typy dostaną kolor zielony
+const LOC_TYPE_META = {
+  client: {label:'→ klient',    bg:'#fee2e2', color:'#dc2626'},
+  prod:   {label:'→ produkcja', bg:'#fef3c7', color:'#d97706'},
+  other:  {label:'inne',        bg:'#f1f5f9', color:'#64748b'},
+};
 
 // Enriched category info with Produkcja vs Magazyn split
 const CAT_INFO={
@@ -135,6 +139,7 @@ const STATUS_META={
   closed:     {label:'Zamknięte', bg:'#d1fae5',color:'#059669'},
 };
 const MONTHS_PL=['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
+// Cykl: null→green→yellow→red→null (4. kliknięcie = reset do szarego)
 const CYCLE={null:'green',green:'yellow',yellow:'red',red:null};
 const S_COLOR={green:'#10b981',yellow:'#f59e0b',red:'#ef4444',null:'#dee2e6'};
 const S_TEXT ={green:'white',  yellow:'#1e293b',red:'white',  null:'#adb5bd'};
@@ -209,10 +214,9 @@ function CatInfoModal({catKey,onClose}){
 }
 
 // ─── COMMENT MODAL ─────────────────────────────────────────────────────────────
-function CommentModal({info,entries,onSave,onClose,customLabels,onAddLabel,onRemoveLabel}){
+function CommentModal({info,entries,onSave,onClose,customLabels,onAddLabel,onRemoveLabel,locations,setLocations}){
   const {line,date,catKey}=info;
   const cat=CATS.find(c=>c.key===catKey);
-  const catInfo=CAT_INFO[catKey];
   const k=eKey(line,date);
   const status=entries[k]?.[catKey];
   const [val,setVal]=useState(entries[k]?.comments?.[catKey]||'');
@@ -220,21 +224,54 @@ function CommentModal({info,entries,onSave,onClose,customLabels,onAddLabel,onRem
   const [newLbl,setNewLbl]=useState('');
   const [showNew,setShowNew]=useState(false);
   const [confirmDel,setConfirmDel]=useState(null);
+
+  // Location management state
+  const [showLocManager,setShowLocManager]=useState(false);
+  const [newLocLabel,setNewLocLabel]=useState('');
+  const [newLocType,setNewLocType]=useState('other');   // 'other' | 'stat'
+  const [newLocStatName,setNewLocStatName]=useState(''); // custom stat category name
+  const [confirmDelLoc,setConfirmDelLoc]=useState(null);
+
+  const locs = locations||DEFAULT_LOCATIONS;
   const allLabels=[...DEFAULT_LABELS[catKey],...(customLabels[catKey]||[])];
 
   function addNew(){
     if(!newLbl.trim()) return;
     onAddLabel(catKey,newLbl.trim()); setVal(newLbl.trim()); setNewLbl(''); setShowNew(false);
   }
+  function addLocation(){
+    if(!newLocLabel.trim()) return;
+    // type = 'other' for table-only, or the stat category name entered by user
+    const type = newLocType==='other' ? 'other'
+      : (newLocStatName.trim().toLowerCase().replace(/\s+/g,'_') || 'stat');
+    const newLoc={id:`loc_${Date.now()}`,label:newLocLabel.trim(),type,
+      statLabel:newLocType==='other'?null:(newLocStatName.trim()||'Statystyki')};
+    setLocations(prev=>[...prev,newLoc]);
+    setNewLocLabel('');setNewLocType('other');setNewLocStatName('');
+  }
+  function removeLocation(id){
+    setLocations(prev=>prev.filter(l=>l.id!==id));
+    if(loc===id) setLoc('');
+    setConfirmDelLoc(null);
+  }
+
+  // Get stat hint for selected location
+  const selLocMeta = locs.find(l=>l.id===loc);
+  const locHint = selLocMeta
+    ? selLocMeta.type==='other'
+      ? '📋 Widoczne w tabeli problemów, nie wliczane do statystyk'
+      : `📊 Wejdzie do statystyk "${selLocMeta.statLabel||selLocMeta.type}"`
+    : null;
 
   return(
     <div style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.6)',display:'flex',
       alignItems:'center',justifyContent:'center',zIndex:200,padding:20}}
       onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={{background:'white',borderRadius:'1.375rem',width:'100%',maxWidth:540,
-        maxHeight:'90vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.25)'}}>
+      <div style={{background:'white',borderRadius:'1.375rem',width:'100%',maxWidth:560,
+        maxHeight:'92vh',overflow:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.25)'}}>
+        {/* Header */}
         <div style={{background:cat.color,padding:'0.9375rem 1.25rem',display:'flex',
-          alignItems:'center',justifyContent:'space-between',position:'sticky',top:0}}>
+          alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:1}}>
           <div>
             <div style={{color:'white',fontWeight:900,fontSize:'1.0625rem'}}>{cat.label} — {date}</div>
             <div style={{color:'rgba(255,255,255,0.88)',fontSize:'0.75rem',marginTop:'0.125rem'}}>
@@ -245,18 +282,20 @@ function CommentModal({info,entries,onSave,onClose,customLabels,onAddLabel,onRem
             width:'1.875rem',height:'1.875rem',borderRadius:'50%',cursor:'pointer',fontSize:'1.0rem',
             display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
         </div>
-        <div style={{padding:18}}>
-          {/* Selected value display */}
+
+        <div style={{padding:'1.125rem'}}>
+          {/* Selected label display */}
           {val&&(
             <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.75rem',
-              padding:'0.5625rem 0.8125rem',background:AREA_BG[catKey],borderRadius:'0.625rem',border:`2px solid ${cat.color}`}}>
+              padding:'0.5625rem 0.8125rem',background:AREA_BG[catKey],borderRadius:'0.625rem',
+              border:`2px solid ${cat.color}`}}>
               <span style={{flex:1,fontSize:'0.875rem',fontWeight:700,color:'#1e293b'}}>{val}</span>
               <button onClick={()=>setVal('')} style={{border:'none',background:'none',
                 cursor:'pointer',color:'#94a3b8',fontSize:'1.125rem',lineHeight:1}}>×</button>
             </div>
           )}
 
-          {/* Labels */}
+          {/* Label picker */}
           <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#94a3b8',letterSpacing:1,
             textTransform:'uppercase',marginBottom:'0.5rem'}}>Wybierz opis problemu</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:'0.4375rem',marginBottom:'0.75rem'}}>
@@ -291,8 +330,8 @@ function CommentModal({info,entries,onSave,onClose,customLabels,onAddLabel,onRem
               );
             })}
             <button onClick={()=>setShowNew(v=>!v)}
-              style={{border:'2px dashed #cbd5e1',borderRadius:'1.25rem',padding:'0.375rem 0.8125rem',fontSize:'0.75rem',
-                cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#94a3b8',background:'white'}}>
+              style={{border:'2px dashed #cbd5e1',borderRadius:'1.25rem',padding:'0.375rem 0.8125rem',
+                fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit',fontWeight:600,color:'#94a3b8',background:'white'}}>
               {showNew?'✕':'＋ Nowa etykieta'}
             </button>
           </div>
@@ -318,36 +357,176 @@ function CommentModal({info,entries,onSave,onClose,customLabels,onAddLabel,onRem
               fontSize:'0.8125rem',fontFamily:'inherit',resize:'none',outline:'none',boxSizing:'border-box',
               lineHeight:1.5,borderColor:val&&!allLabels.includes(val)?cat.color:'#e2e8f0'}}/>
 
-          {/* Location selector */}
-          <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#94a3b8',letterSpacing:1,
-            textTransform:'uppercase',marginBottom:'0.375rem',marginTop:'0.75rem'}}>Miejsce niezgodności</div>
-          <select value={loc} onChange={e=>setLoc(e.target.value)}
-            style={{width:'100%',border:'2px solid #e2e8f0',borderRadius:'0.625rem',padding:'0.625rem 0.8125rem',
-              fontSize:'0.8125rem',fontFamily:'inherit',outline:'none',background:'white',
-              boxSizing:'border-box',color:loc?'#1e293b':'#94a3b8',
-              borderColor:loc?cat.color:'#e2e8f0'}}>
-            {LOCATION_OPTIONS.map(o=>(
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          {loc&&(
-            <div style={{marginTop:'0.375rem',fontSize:'0.6875rem',color:'#64748b',padding:'0.3125rem 0.5rem',
-              background:'#f8fafc',borderRadius:'0.4375rem'}}>
-              {loc==='wysylka_klient'?'📊 Ten problem wejdzie do statystyk "błędy do klienta"':
-               (loc==='magazyn_wydanie'||loc==='produkcja')?'📊 Ten problem wejdzie do statystyk "błędy na produkcję"':
-               '📊 Ten problem będzie widoczny w statystykach ogólnych'}
+          {/* ── MIEJSCE NIEZGODNOŚCI — dynamic tag picker ── */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+            marginTop:'0.875rem',marginBottom:'0.5rem'}}>
+            <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#94a3b8',
+              letterSpacing:1,textTransform:'uppercase'}}>Miejsce niezgodności</div>
+            <button onClick={()=>setShowLocManager(v=>!v)}
+              style={{fontSize:'0.625rem',fontWeight:600,color:showLocManager?'#ef4444':'#64748b',
+                background:'none',border:'1px solid #e2e8f0',borderRadius:'0.375rem',
+                padding:'0.1875rem 0.5rem',cursor:'pointer',fontFamily:'inherit'}}>
+              {showLocManager?'✕ Zamknij':'⚙ Zarządzaj miejscami'}
+            </button>
+          </div>
+
+          {/* Location tag buttons — like labels */}
+          <div style={{display:'flex',flexWrap:'wrap',gap:'0.375rem',marginBottom:'0.375rem'}}>
+            {locs.map(l=>{
+              const typeMeta=LOC_TYPE_META[l.type]||LOC_TYPE_META.other;
+              const isSelected=loc===l.id;
+              return(
+                <button key={l.id}
+                  onClick={()=>setLoc(isSelected?'':l.id)}
+                  style={{
+                    border:`2px solid ${isSelected?cat.color:'#e2e8f0'}`,
+                    borderRadius:'1.25rem',
+                    padding:'0.3125rem 0.6875rem',
+                    fontSize:'0.75rem',
+                    cursor:'pointer',
+                    fontFamily:'inherit',
+                    fontWeight:600,
+                    background:isSelected?cat.color:'white',
+                    color:isSelected?'white':'#475569',
+                    display:'flex',
+                    alignItems:'center',
+                    gap:'0.25rem',
+                  }}>
+                  {/* Type indicator dot */}
+                  <span style={{
+                    width:7,height:7,borderRadius:'50%',flexShrink:0,
+                    background:isSelected?'rgba(255,255,255,0.7)':typeMeta.color,
+                  }}/>
+                  {l.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Stat hint for selected location */}
+          {loc&&locHint&&(
+            <div style={{marginBottom:'0.5rem',fontSize:'0.6875rem',color:'#475569',
+              padding:'0.375rem 0.625rem',background:'#f8fafc',borderRadius:'0.4375rem',
+              border:'1px solid #e2e8f0'}}>
+              {locHint}
             </div>
           )}
 
+          {/* ── Location manager panel ── */}
+          {showLocManager&&(
+            <div style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'0.75rem',
+              padding:'0.75rem',marginBottom:'0.5rem'}}>
+              <div style={{fontWeight:700,fontSize:'0.75rem',color:'#1e293b',marginBottom:'0.5rem'}}>
+                Zarządzaj miejscami niezgodności
+              </div>
+              <div style={{fontSize:'0.625rem',color:'#94a3b8',marginBottom:'0.5rem',lineHeight:1.5}}>
+                Typ określa czy błąd liczy się do statystyk:
+                <span style={{color:'#dc2626',fontWeight:700}}> ● klient</span> —
+                <span style={{color:'#d97706',fontWeight:700}}> ● produkcja</span> —
+                <span style={{color:'#64748b',fontWeight:700}}> ● inne</span> (tylko tabela)
+              </div>
+              {/* Existing locations list */}
+              {locs.map(l=>{
+                const typeMeta=LOC_TYPE_META[l.type]||LOC_TYPE_META.other;
+                return(
+                  <div key={l.id} style={{display:'flex',alignItems:'center',gap:'0.375rem',
+                    marginBottom:'0.375rem',padding:'0.375rem 0.5rem',
+                    background:'white',borderRadius:'0.5rem',border:'1px solid #f1f5f9'}}>
+                    <span style={{width:8,height:8,borderRadius:'50%',
+                      background:typeMeta.color,flexShrink:0}}/>
+                    <span style={{flex:1,fontSize:'0.75rem',color:'#1e293b'}}>{l.label}</span>
+                    <span style={{fontSize:'0.625rem',fontWeight:700,
+                      background: l.type==='other'?'#f1f5f9': l.type==='client'?'#fee2e2': l.type==='prod'?'#fef3c7':'#d1fae5',
+                      color:      l.type==='other'?'#64748b': l.type==='client'?'#dc2626': l.type==='prod'?'#d97706':'#065f46',
+                      padding:'0.125rem 0.375rem',borderRadius:'0.625rem'}}>
+                      {l.type==='other'?'tylko tabela':
+                       l.type==='client'?'klient (stat)':
+                       l.type==='prod'?'produkcja (stat)':
+                       `📊 ${l.statLabel||l.type}`}
+                    </span>
+                    {confirmDelLoc===l.id?(
+                      <>
+                        <button onClick={()=>removeLocation(l.id)}
+                          style={{background:'#ef4444',color:'white',border:'none',borderRadius:'0.3125rem',
+                            padding:'0.1875rem 0.5rem',fontSize:'0.625rem',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+                          Usuń
+                        </button>
+                        <button onClick={()=>setConfirmDelLoc(null)}
+                          style={{background:'#f1f5f9',color:'#94a3b8',border:'none',borderRadius:'0.3125rem',
+                            padding:'0.1875rem 0.375rem',fontSize:'0.625rem',cursor:'pointer'}}>✕</button>
+                      </>
+                    ):(
+                      <button onClick={()=>setConfirmDelLoc(l.id)}
+                        style={{background:'none',border:'1px solid #e2e8f0',borderRadius:'0.3125rem',
+                          padding:'0.1875rem 0.375rem',fontSize:'0.625rem',color:'#94a3b8',cursor:'pointer'}}>
+                        🗑
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {/* Add new location */}
+              <div style={{display:'flex',gap:'0.375rem',marginTop:'0.5rem',flexWrap:'wrap',alignItems:'flex-end'}}>
+                {/* Nazwa miejsca */}
+                <input placeholder="Nazwa miejsca..." value={newLocLabel}
+                  onChange={e=>setNewLocLabel(e.target.value)}
+                  onKeyDown={e=>e.key==='Enter'&&addLocation()}
+                  style={{flex:'1 1 140px',border:'1.5px solid #e2e8f0',borderRadius:'0.5rem',
+                    padding:'0.375rem 0.625rem',fontSize:'0.75rem',fontFamily:'inherit',outline:'none'}}/>
+                {/* Prosty wybór: tabela vs statystyki */}
+                <div style={{display:'flex',border:'1.5px solid #e2e8f0',borderRadius:'0.5rem',overflow:'hidden',flexShrink:0}}>
+                  <button
+                    onClick={()=>setNewLocType('other')}
+                    style={{padding:'0.375rem 0.625rem',fontSize:'0.6875rem',fontWeight:600,
+                      cursor:'pointer',fontFamily:'inherit',border:'none',
+                      background:newLocType==='other'?'#0f172a':'white',
+                      color:newLocType==='other'?'white':'#64748b'}}>
+                    tylko tabela
+                  </button>
+                  <button
+                    onClick={()=>setNewLocType('stat')}
+                    style={{padding:'0.375rem 0.625rem',fontSize:'0.6875rem',fontWeight:600,
+                      cursor:'pointer',fontFamily:'inherit',border:'none',
+                      borderLeft:'1.5px solid #e2e8f0',
+                      background:newLocType==='stat'?'#10b981':'white',
+                      color:newLocType==='stat'?'white':'#64748b'}}>
+                    📊 statystyki
+                  </button>
+                </div>
+                {/* Jeśli "statystyki" — pole na nazwę kategorii */}
+                {newLocType==='stat'&&(
+                  <input
+                    placeholder="Nazwa kategorii (np. klient, linia B...)"
+                    value={newLocStatName}
+                    onChange={e=>setNewLocStatName(e.target.value)}
+                    style={{flex:'1 1 160px',border:'1.5px solid #10b981',borderRadius:'0.5rem',
+                      padding:'0.375rem 0.625rem',fontSize:'0.75rem',fontFamily:'inherit',outline:'none'}}/>
+                )}
+                <button onClick={addLocation}
+                  style={{background:'#0f172a',color:'white',border:'none',borderRadius:'0.5rem',
+                    padding:'0.375rem 0.75rem',fontWeight:700,fontSize:'0.75rem',
+                    cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>＋ Dodaj</button>
+              </div>
+              <div style={{fontSize:'0.625rem',color:'#94a3b8',marginTop:'0.375rem',lineHeight:1.4}}>
+                <b>Tylko tabela</b> — miejsce widoczne w liście problemów, nie wliczane do żadnych statystyk.<br/>
+                <b>Statystyki</b> — błędy z tego miejsca będą zliczane i pokazywane w osobnym kafelku pod tabelą.
+                Możesz mieć dowolne kategorie: "klient", "linia A", "dostawca" itp.
+              </div>
+            </div>
+          )}
+
+          {/* Action buttons */}
           <div style={{display:'flex',gap:'0.625rem',marginTop:'0.875rem'}}>
             <button onClick={onClose}
               style={{flex:1,background:'white',color:'#475569',border:'2px solid #e2e8f0',
-                borderRadius:'0.75rem',padding:'0.75rem',fontWeight:700,fontSize:'0.875rem',cursor:'pointer',fontFamily:'inherit'}}>
+                borderRadius:'0.75rem',padding:'0.75rem',fontWeight:700,fontSize:'0.875rem',
+                cursor:'pointer',fontFamily:'inherit'}}>
               Anuluj
             </button>
             <button onClick={()=>onSave(val,loc)}
               style={{flex:2,background:'#0f172a',color:'white',border:'none',
-                borderRadius:'0.75rem',padding:'0.75rem',fontWeight:700,fontSize:'0.875rem',cursor:'pointer',fontFamily:'inherit'}}>
+                borderRadius:'0.75rem',padding:'0.75rem',fontWeight:700,fontSize:'0.875rem',
+                cursor:'pointer',fontFamily:'inherit'}}>
               💾 Zapisz
             </button>
           </div>
@@ -438,7 +617,7 @@ function SquareRing({cat,year,month,line,entries,onToggle}){
     const ds=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const k=eKey(line,ds);
     const st=entries[k]?.[cat.key]??null;
-    const future=isCurMon&&d>today;
+    const future=isCurMon&&d>today;  // FIX 3: future days truly blocked
     const wknd=isWknd(year,month,d);
     const startA=-Math.PI/2+(d-1)*segAngle+gap/2;
     const endA=startA+segAngle-gap;
@@ -452,34 +631,33 @@ function SquareRing({cat,year,month,line,entries,onToggle}){
     const midA=startA+(segAngle-gap)/2;
     const lx=cx+r*Math.cos(midA),ly=cy+r*Math.sin(midA);
     let fill=st?S_COLOR[st]:wknd?'#bfdbfe':future?'#e9ecef':'#dee2e6';
-    let textFill=st?S_TEXT[st]:wknd?'#1e40af':future?'#adb5bd':'#868e96';
+    let textFill=st?S_TEXT[st]:wknd?'#1e40af':future?'#c8d0db':'#868e96';
     const isToday=isCurMon&&d===today;
     const fSize=days===31?'7.5':days===30?'8':'9';
     segs.push(
-      <g key={d} onClick={()=>onToggle(line,ds,cat.key)} style={{cursor:'pointer'}}>
+      <g key={d}
+        onClick={()=>!future&&onToggle(line,ds,cat.key)}  // FIX 3: future = nie klikalne
+        style={{cursor:future?'default':'pointer'}}>
         <path d={path} fill={fill}
           stroke={isToday?'#0f172a':wknd&&!st?'#93c5fd':'white'}
-          strokeWidth={isToday?2.5:1.5} opacity={future?0.55:1}/>
+          strokeWidth={isToday?2.5:1.5}
+          opacity={future?0.35:1}/>  // FIX 3: future wyraźnie wyszarzone
         <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
           fontSize={fSize} fontWeight={wknd?"800":"700"} fill={textFill}
           style={{pointerEvents:'none',userSelect:'none'}}>{d}</text>
       </g>
     );
   }
-  const pctC=pct===null?'#94a3b8':pct>=95?'#10b981':pct>=80?'#f59e0b':'#ef4444';
+  // FIX 1: Usunięto % — tylko litera wycentrowana w środku kółka
   return(
     <div style={{position:'relative',width:'100%',paddingBottom:'100%'}}>
       <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
         <svg width="100%" height="100%" viewBox="0 0 320 320">
           {segs}
-          <text x={cx} y={cy-14} textAnchor="middle" dominantBaseline="middle"
-            fontSize="52" fontWeight="900" fill={cat.color}
+          {/* FIX 1: litera wycentrowana pionowo (cy=160, nie cy-14) */}
+          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+            fontSize="72" fontWeight="900" fill={cat.color}
             style={{fontFamily:'inherit',userSelect:'none'}}>{cat.key}</text>
-          <text x={cx} y={cy+28} textAnchor="middle" dominantBaseline="middle"
-            fontSize="24" fontWeight="800" fill={pctC}
-            style={{fontFamily:'inherit',userSelect:'none'}}>
-            {pct!==null?`${pct}%`:'–'}
-          </text>
         </svg>
       </div>
     </div>
@@ -701,9 +879,24 @@ function GoalSection({ cat, currentPct, goalVal, onSetGoal }) {
 }
 
 // ─── PROBLEM TABLE (only "Problem" column) ────────────────────────────────────
-function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,onSetGoal}){
+function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,onSetGoal,locations}){
   const [editId,setEditId]=useState(null);
   const [editTitle,setEditTitle]=useState('');
+
+  const locs = locations || DEFAULT_LOCATIONS;
+  function getLocMeta(locId){
+    const l = locs.find(x=>x.id===locId);
+    if(!l) return null;
+    const base = LOC_TYPE_META[l.type]||LOC_TYPE_META.other;
+    // For custom stat types (not 'other','client','prod'), use green colour
+    const isCustomStat = l.type!=='other'&&l.type!=='client'&&l.type!=='prod';
+    return {
+      ...l,
+      bg:    isCustomStat ? '#d1fae5' : base.bg,
+      color: isCustomStat ? '#065f46' : base.color,
+      label: isCustomStat ? `→ ${l.statLabel||l.type}` : base.label,
+    };
+  }
 
   const rows=issues.filter(i=>i.line===line&&i.area===cat.key);
 
@@ -718,12 +911,30 @@ function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,o
     }));
   }
 
-  // Stats — error breakdown by location
+  // Stats: group by unique type (excluding 'other'), keyed by type string
   const totalRows=rows.length;
-  const clientErrors=rows.filter(i=>LOC_CLIENT.includes(i.location)).length;
-  const prodErrors  =rows.filter(i=>LOC_PROD.includes(i.location)).length;
-  const clientPct=totalRows>0?Math.round((clientErrors/totalRows)*100):0;
-  const prodPct  =totalRows>0?Math.round((prodErrors  /totalRows)*100):0;
+  // Build stat groups: {type: {count, statLabel, color, bg, barColor, barBg, borderColor}}
+  const statGroups = {};
+  locs.filter(l=>l.type!=='other').forEach(l=>{
+    if(!statGroups[l.type]){
+      const isBuiltin = l.type==='client'||l.type==='prod';
+      const base = LOC_TYPE_META[l.type]||null;
+      statGroups[l.type]={
+        statLabel: l.statLabel || l.type,
+        color:     base?.color || '#065f46',
+        bg:        base?.bg    || '#d1fae5',
+        barColor:  l.type==='client'?'#ef4444': l.type==='prod'?'#f59e0b':'#10b981',
+        barBg:     l.type==='client'?'#fee2e2': l.type==='prod'?'#fef3c7':'#d1fae5',
+        border:    l.type==='client'?'#fecaca': l.type==='prod'?'#fed7aa':'#a7f3d0',
+        count: 0,
+      };
+    }
+  });
+  rows.forEach(i=>{
+    const l=locs.find(x=>x.id===i.location);
+    if(l&&l.type!=='other'&&statGroups[l.type]) statGroups[l.type].count++;
+  });
+  const statTypes = Object.keys(statGroups);
 
   const EMPTY_COUNT=6;
 
@@ -748,58 +959,83 @@ function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,o
         ):(
           <>
             {rows.map(issue=>(
-              <div key={issue.id} style={{borderBottom:'1px solid #f1f5f9',padding:'0.5625rem 0.875rem',
-                display:'flex',alignItems:'center',gap:'0.5rem',minHeight:'2.75rem'}}>
+              <div key={issue.id} style={{borderBottom:'1px solid #f1f5f9',
+                padding:'0.6rem 0.875rem',display:'flex',
+                alignItems:'flex-start',gap:'0.5rem',minHeight:'3rem'}}>
                 {editId===issue.id?(
                   <div style={{display:'flex',gap:'0.3125rem',flex:1}}>
                     <input value={editTitle} onChange={e=>setEditTitle(e.target.value)}
                       onKeyDown={e=>e.key==='Enter'&&saveEdit(issue)}
-                      style={{flex:1,border:'1.5px solid #3b82f6',borderRadius:'0.4375rem',padding:'0.3125rem 0.5625rem',
-                        fontSize:'0.75rem',fontFamily:'inherit',outline:'none'}} autoFocus/>
+                      style={{flex:1,border:'1.5px solid #3b82f6',borderRadius:'0.4375rem',
+                        padding:'0.3125rem 0.5625rem',fontSize:'0.75rem',
+                        fontFamily:'inherit',outline:'none'}} autoFocus/>
                     <button onClick={()=>saveEdit(issue)}
-                      style={{background:'#10b981',border:'none',borderRadius:'0.375rem',padding:'0.3125rem 0.5625rem',
-                        color:'white',fontWeight:700,fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit'}}>✓</button>
+                      style={{background:'#10b981',border:'none',borderRadius:'0.375rem',
+                        padding:'0.3125rem 0.5625rem',color:'white',fontWeight:700,
+                        fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>✓</button>
                     <button onClick={()=>setEditId(null)}
-                      style={{background:'#f1f5f9',border:'none',borderRadius:'0.375rem',padding:'0.3125rem 0.4375rem',
-                        color:'#94a3b8',fontSize:'0.75rem',cursor:'pointer'}}>✕</button>
+                      style={{background:'#f1f5f9',border:'none',borderRadius:'0.375rem',
+                        padding:'0.3125rem 0.4375rem',color:'#94a3b8',
+                        fontSize:'0.75rem',cursor:'pointer',flexShrink:0}}>✕</button>
                   </div>
                 ):(
-                  <>
-                    {/* Date chip */}
-                    <span style={{fontSize:'0.625rem',color:'#94a3b8',fontWeight:600,whiteSpace:'nowrap',
-                      background:'#f8fafc',padding:'0.125rem 0.375rem',borderRadius:'0.375rem',flexShrink:0}}>
-                      {issue.date||'—'}
-                    </span>
-                    {/* Title — click to edit */}
-                    <span style={{flex:1,fontSize:'0.75rem',color:'#1e293b',fontWeight:600,
-                      cursor:'pointer',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.4}}
-                      title="Kliknij aby edytować"
-                      onClick={()=>startEdit(issue)}>
-                      {issue.title||<span style={{color:'#cbd5e1',fontStyle:'italic'}}>brak opisu</span>}
-                    </span>
-                    {/* Location chip if set */}
-                    {issue.location&&(
-                      <span style={{fontSize:'0.625rem',background:
-                        LOC_CLIENT.includes(issue.location)?'#fee2e2':
-                        LOC_PROD.includes(issue.location)?'#fef3c7':'#f1f5f9',
-                        color:LOC_CLIENT.includes(issue.location)?'#dc2626':
-                          LOC_PROD.includes(issue.location)?'#d97706':'#64748b',
-                        padding:'0.125rem 0.4375rem',borderRadius:'0.625rem',fontWeight:700,flexShrink:0,whiteSpace:'nowrap'}}>
-                        {LOC_CLIENT.includes(issue.location)?'→ klient':
-                         LOC_PROD.includes(issue.location)?'→ produkcja':'inne'}
+                  <div style={{flex:1,minWidth:0}}>
+                    {/* Data + lokalizacja w jednej linii */}
+                    <div style={{display:'flex',alignItems:'center',gap:'0.375rem',
+                      marginBottom:'0.25rem',flexWrap:'wrap'}}>
+                      <span style={{fontSize:'0.625rem',color:'#94a3b8',fontWeight:600,
+                        background:'#f8fafc',padding:'0.125rem 0.375rem',
+                        borderRadius:'0.375rem',flexShrink:0,whiteSpace:'nowrap'}}>
+                        {issue.date||'—'}
                       </span>
+                      {issue.location&&(()=>{
+                        const meta=getLocMeta(issue.location);
+                        if(!meta) return null;
+                        return(
+                          <span style={{fontSize:'0.625rem',fontWeight:700,flexShrink:0,
+                            whiteSpace:'nowrap',padding:'0.125rem 0.4375rem',borderRadius:'0.625rem',
+                            background:meta.bg, color:meta.color}}>
+                            {meta.label}
+                          </span>
+                        );
+                      })()}
+                      <button onClick={()=>cycle(issue.id)}
+                        style={{border:'none',borderRadius:'0.625rem',
+                          padding:'0.125rem 0.5rem',fontSize:'0.625rem',fontWeight:700,
+                          cursor:'pointer',fontFamily:'inherit',flexShrink:0,
+                          background:STATUS_META[issue.status].bg,
+                          color:STATUS_META[issue.status].color}}>
+                        {STATUS_META[issue.status].label}
+                      </button>
+                      <button onClick={()=>del(issue.id)}
+                        style={{background:'none',border:'none',cursor:'pointer',
+                          color:'#e2e8f0',fontSize:'0.9375rem',lineHeight:1,
+                          flexShrink:0,marginLeft:'auto'}}>×</button>
+                    </div>
+                    {/* FIX 4: pełny tekst z zawijaniem — kliknij aby edytować */}
+                    <div
+                      onClick={()=>startEdit(issue)}
+                      title="Kliknij aby edytować"
+                      style={{
+                        fontSize:'0.8125rem',
+                        color:'#1e293b',
+                        fontWeight:600,
+                        lineHeight:1.5,
+                        cursor:'pointer',
+                        wordBreak:'break-word',    // zawijaj długie słowa
+                        whiteSpace:'normal',        // zawijaj tekst
+                        overflowWrap:'break-word',
+                      }}>
+                      {issue.title||
+                        <span style={{color:'#cbd5e1',fontStyle:'italic'}}>brak opisu</span>}
+                    </div>
+                    {issue.desc&&(
+                      <div style={{fontSize:'0.6875rem',color:'#64748b',marginTop:'0.125rem',
+                        lineHeight:1.4,wordBreak:'break-word',whiteSpace:'normal'}}>
+                        {issue.desc}
+                      </div>
                     )}
-                    {/* Status badge */}
-                    <button onClick={()=>cycle(issue.id)}
-                      style={{border:'none',borderRadius:'0.625rem',padding:'0.1875rem 0.5rem',fontSize:'0.625rem',fontWeight:700,
-                        cursor:'pointer',fontFamily:'inherit',flexShrink:0,
-                        background:STATUS_META[issue.status].bg,color:STATUS_META[issue.status].color}}>
-                      {STATUS_META[issue.status].label}
-                    </button>
-                    <button onClick={()=>del(issue.id)}
-                      style={{background:'none',border:'none',cursor:'pointer',color:'#e2e8f0',
-                        fontSize:'0.9375rem',lineHeight:1,flexShrink:0}}>×</button>
-                  </>
+                  </div>
                 )}
               </div>
             ))}
@@ -813,40 +1049,40 @@ function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,o
         )}
       </div>
 
-      {/* ── STATS SECTION — separated by gap ── */}
+      {/* ── STATS SECTION — dynamic based on location types ── */}
       <div style={{background:'#f8fafc',borderTop:'3px solid #e2e8f0',padding:'0.625rem 0.875rem',flexShrink:0}}>
         <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#64748b',letterSpacing:1,
           textTransform:'uppercase',marginBottom:'0.5rem'}}>Statystyki błędów</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem'}}>
-          {/* Errors to client */}
-          <div style={{background:'white',borderRadius:'0.625rem',padding:'0.5625rem 0.6875rem',
-            border:'1px solid #fecaca'}}>
-            <div style={{fontSize:'0.625rem',color:'#94a3b8',fontWeight:600,marginBottom:'0.25rem'}}>→ Błędy do klienta</div>
-            <div style={{display:'flex',alignItems:'baseline',gap:'0.3125rem'}}>
-              <span style={{fontSize:'1.25rem',fontWeight:900,color:'#dc2626'}}>{clientErrors}</span>
-              <span style={{fontSize:'0.6875rem',color:'#94a3b8'}}>({clientPct}%)</span>
-            </div>
-            {totalRows>0&&(
-              <div style={{marginTop:'0.3125rem',height:4,background:'#fee2e2',borderRadius:3,overflow:'hidden'}}>
-                <div style={{height:'100%',width:`${clientPct}%`,background:'#ef4444',borderRadius:3}}/>
-              </div>
-            )}
+        {statTypes.length===0?(
+          <div style={{fontSize:'0.625rem',color:'#94a3b8',textAlign:'center',padding:'0.25rem 0'}}>
+            Brak kategorii statystyk — skonfiguruj miejsca niezgodności
           </div>
-          {/* Errors to production */}
-          <div style={{background:'white',borderRadius:'0.625rem',padding:'0.5625rem 0.6875rem',
-            border:'1px solid #fed7aa'}}>
-            <div style={{fontSize:'0.625rem',color:'#94a3b8',fontWeight:600,marginBottom:'0.25rem'}}>→ Błędy na produkcję</div>
-            <div style={{display:'flex',alignItems:'baseline',gap:'0.3125rem'}}>
-              <span style={{fontSize:'1.25rem',fontWeight:900,color:'#d97706'}}>{prodErrors}</span>
-              <span style={{fontSize:'0.6875rem',color:'#94a3b8'}}>({prodPct}%)</span>
-            </div>
-            {totalRows>0&&(
-              <div style={{marginTop:'0.3125rem',height:4,background:'#fef3c7',borderRadius:3,overflow:'hidden'}}>
-                <div style={{height:'100%',width:`${prodPct}%`,background:'#f59e0b',borderRadius:3}}/>
-              </div>
-            )}
+        ):(
+          <div style={{display:'grid',
+            gridTemplateColumns:`repeat(${Math.min(statTypes.length,3)},1fr)`,gap:'0.5rem'}}>
+            {statTypes.map(type=>{
+              const g=statGroups[type];
+              const pct=totalRows>0?Math.round((g.count/totalRows)*100):0;
+              return(
+                <div key={type} style={{background:'white',borderRadius:'0.625rem',
+                  padding:'0.5625rem 0.6875rem',border:`1px solid ${g.border}`}}>
+                  <div style={{fontSize:'0.625rem',color:'#94a3b8',fontWeight:600,marginBottom:'0.25rem'}}>
+                    {g.statLabel}
+                  </div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:'0.3125rem'}}>
+                    <span style={{fontSize:'1.25rem',fontWeight:900,color:g.color}}>{g.count}</span>
+                    <span style={{fontSize:'0.6875rem',color:'#94a3b8'}}>({pct}%)</span>
+                  </div>
+                  {totalRows>0&&(
+                    <div style={{marginTop:'0.3125rem',height:4,background:g.barBg,borderRadius:3,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${pct}%`,background:g.barColor,borderRadius:3}}/>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        </div>
+        )}
         {totalRows>0&&(
           <div style={{fontSize:'0.625rem',color:'#94a3b8',textAlign:'center',marginTop:'0.4375rem'}}>
             Łącznie {totalRows} {totalRows===1?'problem':totalRows<5?'problemy':'problemów'} w tym miesiącu
@@ -854,14 +1090,13 @@ function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,o
         )}
       </div>
 
-      {/* ── CEL MIESIĄCA + LEAN DESCRIPTION ── */}
-      <GoalSection cat={cat} currentPct={currentPct} goalVal={goalVal} onSetGoal={onSetGoal}/>
+      {/* koniec ProblemTable */}
     </div>
   );
 }
 
 // ─── SQDP COLUMN ─────────────────────────────────────────────────────────────
-function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onToggle,onCatClick,goals,setGoals}){
+function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onToggle,onCatClick,goals,setGoals,locations}){
   const ms=`${year}-${String(month+1).padStart(2,'0')}`;
   const dayList=Object.values(entries).filter(e=>e.date.startsWith(ms)&&e.line===line);
   const gN=dayList.filter(e=>e[cat.key]==='green').length;
@@ -919,7 +1154,8 @@ function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onToggle,onCat
           <ProblemTable cat={cat} line={line} issues={issues} setIssues={setIssues}
             year={year} month={month}
             currentPct={currentPct} goalVal={goalVal}
-            onSetGoal={v=>setGoals(prev=>({...prev,[goalKey]:v}))}/>
+            onSetGoal={v=>setGoals(prev=>({...prev,[goalKey]:v}))}
+            locations={locations}/>
         </div>
       </div>
     </div>
@@ -927,7 +1163,7 @@ function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onToggle,onCat
 }
 
 // ─── MAIN BOARD ───────────────────────────────────────────────────────────────
-function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onSummary,goals,setGoals}){
+function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onSummary,goals,setGoals,locations,setLocations}){
   const now=new Date();
   const [year,  setYear]  =useState(now.getFullYear());
   const [month, setMonth] =useState(now.getMonth());
@@ -947,16 +1183,23 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
     const k=eKey(ln,ds);
     const cur=entries[k]?.[catKey]??null;
     const next=CYCLE[cur];
+    // next===null = 4. kliknięcie = reset — App root czyści wszystko
     onToggle(ln,ds,catKey,next,null,null);
     const same=modal&&modal.line===ln&&modal.date===ds&&modal.catKey===catKey;
-    if((next==='yellow'||next==='red')&&!same) setModal({line:ln,date:ds,catKey});
-    else if((next===null||next==='green')&&same) setModal(null);
+    if(next===null){
+      // Reset — zamknij modal jeśli był otwarty dla tego segmentu
+      if(same) setModal(null);
+    } else if(next==='yellow'||next==='red'){
+      if(!same) setModal({line:ln,date:ds,catKey});
+    } else if(next==='green'){
+      if(same) setModal(null);
+    }
   }
 
   function handleSaveComment(val,loc){
     if(modal){
       const k=eKey(modal.line,modal.date);
-      const status=entries[k]?.[modal.catKey];
+      const status=entries[k]?.[modal.catKey]; // 'yellow' lub 'red' — zachowaj ten kolor
       if(val.trim()||loc){
         const existIdx=issues.findIndex(i=>i._ek===k&&i.area===modal.catKey);
         if(existIdx>=0){
@@ -972,7 +1215,8 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
           },...prev]);
         }
       }
-      onToggle(modal.line,modal.date,modal.catKey,null,val,loc);
+      // Przekazuj aktualny status (yellow/red) a nie null — żeby kolor nie znikał
+      onToggle(modal.line,modal.date,modal.catKey,status,val,loc);
     }
     setModal(null);
   }
@@ -1054,7 +1298,8 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
             <SqdpColumn key={cat.key} cat={cat} year={year} month={month} line={line}
               entries={entries} issues={issues} setIssues={setIssues}
               onToggle={handleToggle} onCatClick={()=>setCatInfo(cat.key)}
-              goals={goals} setGoals={setGoals}/>
+              goals={goals} setGoals={setGoals}
+              locations={locations}/>
           ))}
         </div>
       </div>
@@ -1062,11 +1307,11 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
       {/* Bottom tip */}
       <div style={{background:'#f0f9ff',borderTop:'1px solid #bae6fd',padding:'0.375rem 1.0rem',
         fontSize:'0.6875rem',color:'#0369a1',flexShrink:0,display:'flex',alignItems:'center',gap:'0.625rem',flexWrap:'wrap'}}>
-        <span>💡 Segment →
-          <b> szary</b> →
+        <span>💡 Kliknij segment →
           <span style={{color:'#10b981',fontWeight:700}}> zielony</span> →
           <span style={{color:'#f59e0b',fontWeight:700}}> żółty</span> →
-          <span style={{color:'#ef4444',fontWeight:700}}> czerwony</span> → szary
+          <span style={{color:'#ef4444',fontWeight:700}}> czerwony</span> →
+          <span style={{fontWeight:700}}> szary (reset)</span>
         </span>
         <span style={{color:'#cbd5e1'}}>|</span>
         <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}}>
@@ -1081,7 +1326,8 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
       {/* MODALS */}
       {modal&&<CommentModal info={modal} entries={entries} onSave={handleSaveComment}
         onClose={()=>setModal(null)} customLabels={customLabels}
-        onAddLabel={addCustomLabel} onRemoveLabel={removeCustomLabel}/>}
+        onAddLabel={addCustomLabel} onRemoveLabel={removeCustomLabel}
+        locations={locations} setLocations={setLocations}/>}
       {showReset&&<ResetModal year={year} month={month} line={line}
         onConfirm={doReset} onClose={()=>setShowReset(false)}/>}
       {showLineEd&&<LineEditorModal lines={lines}
@@ -1109,16 +1355,9 @@ const HIST_UNISYSTEM = [
 ];
 
 // ─── SUMMARY SCREEN ───────────────────────────────────────────────────────────
-function Summary({entries, lines, onBoard}) {
+function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, setExtraData}) {
   const now = new Date();
   const [summLine, setSummLine] = useState(lines[0]?.name || 'Unisystem');
-  // Extra columns state — editable per row
-  const [extraCols, setExtraCols] = useState([
-    {id:'c1', label:'Przyjęcia ilość pozycji'},
-    {id:'c2', label:'Przyjęcia ilość dokumentów'},
-    {id:'c3', label:'Uwagi'},
-  ]);
-  const [extraData, setExtraData] = useState({}); // key: `${line}-${year}-${month}-${colId}`
   const [editingCol, setEditingCol] = useState(null);
   const [newColLabel, setNewColLabel] = useState('');
 
@@ -1548,23 +1787,66 @@ function App(){
   const [issues, setIssues] =useState([]);
   const [lines,  setLines]  =useState([{id:'l1',name:'Unisystem'},{id:'l2',name:'Riverdi'}]);
   const [view,   setView]   =useState('board');
-  // Goals: {`${line}-${year}-${month}-${catKey}`: number (0-100)}
-  const [goals, setGoals] = useState({}); // 'board' | 'summary'
+  const [goals,  setGoals]  =useState({});
+  const [locations, setLocations] = useState(DEFAULT_LOCATIONS);
+
+  // Summary table data — persisted in localStorage so navigating away doesn't lose data
+  const [extraCols, setExtraCols] = useState(()=>{
+    try{ const s=localStorage.getItem('sqdp-extra-cols');
+      return s?JSON.parse(s):[
+        {id:'c1',label:'Przyjęcia ilość pozycji'},
+        {id:'c2',label:'Przyjęcia ilość dokumentów'},
+        {id:'c3',label:'Uwagi'},
+      ];
+    }catch{return [{id:'c1',label:'Przyjęcia ilość pozycji'},{id:'c2',label:'Przyjęcia ilość dokumentów'},{id:'c3',label:'Uwagi'}];}
+  });
+  const [extraData, setExtraData] = useState(()=>{
+    try{ const s=localStorage.getItem('sqdp-extra-data'); return s?JSON.parse(s):{}; }catch{return {};}
+  });
+
+  // Auto-save extraCols and extraData to localStorage whenever they change
+  const setExtraColsPersist = (updater)=>{
+    setExtraCols(prev=>{
+      const next=typeof updater==='function'?updater(prev):updater;
+      try{localStorage.setItem('sqdp-extra-cols',JSON.stringify(next));}catch{}
+      return next;
+    });
+  };
+  const setExtraDataPersist = (updater)=>{
+    setExtraData(prev=>{
+      const next=typeof updater==='function'?updater(prev):updater;
+      try{localStorage.setItem('sqdp-extra-data',JSON.stringify(next));}catch{}
+      return next;
+    });
+  };
 
   const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
     setEntries(prev=>{
       const k=eKey(line,dateStr);
       const ex=prev[k]||{id:k,date:dateStr,line,
         S:null,Q:null,D:null,P:null,
-        comments:{S:',Q:',D:',P:'},
-        locations:{S:',Q:',D:',P:'}};
+        comments:{S:'',Q:'',D:'',P:''},
+        locations:{S:'',Q:'',D:'',P:''}};
+
+      // Reset (4. kliknięcie): nextStatus===null → czyść wszystko dla tego dnia/litery
+      if(nextStatus===null){
+        return{...prev,[k]:{
+          ...ex,
+          [catKey]: null,
+          comments:{...ex.comments,[catKey]:''},
+          locations:{...ex.locations,[catKey]:''},
+        }};
+      }
+
       return{...prev,[k]:{...ex,
-        [catKey]: nextStatus!==null&&comment===null?nextStatus:ex[catKey],
+        // Zawsze aktualizuj status z nextStatus (może być 'yellow', 'red', 'green')
+        // comment to tylko dodatkowe dane — nie wpływa na status
+        [catKey]: nextStatus,
         comments:{...ex.comments,
           [catKey]:comment!==null?comment:
-            (nextStatus==='green'||nextStatus===null?'':ex.comments[catKey])},
+            nextStatus==='green'?'':ex.comments[catKey]},
         locations:{...ex.locations,
-          [catKey]:loc!==null&&loc!==undefined?loc:ex.locations[catKey]},
+          [catKey]:loc!=null?loc:ex.locations[catKey]},
       }};
     });
   },[]);
@@ -1625,10 +1907,13 @@ function App(){
         <MainBoard entries={entries} onToggle={handleToggle} onReset={handleReset}
           issues={issues} setIssues={setIssues} lines={lines} setLines={setLines}
           goals={goals} setGoals={setGoals}
+          locations={locations} setLocations={setLocations}
           uiScale={uiScale}
           onSummary={()=>setView('summary')}/>
       ):(
-        <Summary entries={entries} lines={lines} onBoard={()=>setView('board')}/>
+        <Summary entries={entries} lines={lines} onBoard={()=>setView('board')}
+          extraCols={extraCols} setExtraCols={setExtraColsPersist}
+          extraData={extraData} setExtraData={setExtraDataPersist}/>
       )}
       <style>{`
         *{box-sizing:border-box;} body{margin:0;}
