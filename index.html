@@ -482,6 +482,7 @@
     </div>
     <div class="nav-right">
       <span class="nav-user" id="navUser"></span>
+      <span id="roleBadge" style="font-size:11px;color:var(--accent);font-family:'DM Mono',monospace;"></span>
       <button class="btn-out" onclick="doLogout()">Wyloguj</button>
     </div>
   </nav>
@@ -496,7 +497,7 @@
 
     <div class="apps-grid">
 
-      <div class="app-card" onclick="openApp('sqdp')">
+      <div class="app-card" data-app="sqdp" onclick="openApp('sqdp')">
         <div class="app-icon-row">
           <div class="app-icon" style="background: linear-gradient(135deg,#b85c1a,#8a1a1a);">SQDP</div>
           <span class="app-status">Aktywna</span>
@@ -506,7 +507,7 @@
         <div class="app-arrow">Otwórz →</div>
       </div>
 
-      <div class="app-card" onclick="openApp('kamishibai')">
+      <div class="app-card" data-app="kamishibai" onclick="openApp('kamishibai')">
         <div class="app-icon-row">
           <div class="app-icon" style="background: linear-gradient(135deg,#1a2a5a,#1a5a8a);">KAM</div>
           <span class="app-status">Aktywna</span>
@@ -516,7 +517,7 @@
         <div class="app-arrow">Otwórz →</div>
       </div>
 
-      <div class="app-card" onclick="openApp('kompetencje')">
+      <div class="app-card" data-app="kompetencje" onclick="openApp('kompetencje')">
         <div class="app-icon-row">
           <div class="app-icon" style="background: linear-gradient(135deg,#1a5a2a,#0d3a1a);">KOM</div>
           <span class="app-status">Aktywna</span>
@@ -526,7 +527,7 @@
         <div class="app-arrow">Otwórz →</div>
       </div>
 
-      <div class="app-card" onclick="openApp('kaizen')">
+      <div class="app-card" data-app="kaizen" onclick="openApp('kaizen')">
         <div class="app-icon-row">
           <div class="app-icon" style="background: linear-gradient(135deg,#8a6a0a,#5a4008);">KAI</div>
           <span class="app-status">Aktywna</span>
@@ -547,9 +548,16 @@
 
 <script>
   // ── CREDENTIALS ──
+  // rola: 'zarzad' = wszystkie 4 tablice, 'pracownik' = 3 tablice (bez Matrycy)
   const USERS = {
-    "Unisystem": "Lean2026!"
+    "Unisystem": { haslo: "Lean2026!",  rola: "zarzad"    },
+    "Pracownik":  { haslo: "Team2026!", rola: "pracownik" }
   };
+  const ROLE_APPS = {
+    zarzad:    ['sqdp','kamishibai','kompetencje','kaizen'],
+    pracownik: ['sqdp','kamishibai','kaizen']
+  };
+  let currentRole = null;
 
   // ── APP LINKS (uzupełnij gdy aplikacje będą gotowe) ──
   const APPS = {
@@ -563,18 +571,31 @@
     const login = document.getElementById('loginInput').value.trim();
     const pass  = document.getElementById('passInput').value;
     const err   = document.getElementById('errMsg');
+    const user  = USERS[login];
 
-    if (USERS[login] && USERS[login] === pass) {
+    if (user && user.haslo === pass) {
       err.style.display = 'none';
+      currentRole = user.rola;
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('dashboard').style.display   = 'block';
       document.getElementById('navUser').textContent = '// ' + login;
+
+      // Pokaż/ukryj karty według roli
+      const allowed = ROLE_APPS[currentRole];
+      document.querySelectorAll('.app-card[data-app]').forEach(card => {
+        card.style.display = allowed.includes(card.dataset.app) ? 'block' : 'none';
+      });
+
+      // Etykieta roli
+      document.getElementById('roleBadge').textContent =
+        currentRole === 'zarzad' ? '👔 Zarząd' : '👷 Pracownik';
     } else {
       err.style.display = 'block';
     }
   }
 
   function doLogout() {
+    currentRole = null;
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('dashboard').style.display   = 'none';
     document.getElementById('loginInput').value = '';
@@ -583,11 +604,7 @@
 
   function openApp(name) {
     const url = APPS[name];
-    if (url && url !== '#') {
-      window.open(url, '_blank');
-    } else {
-      alert('Aplikacja "' + name + '" będzie dostępna wkrótce.');
-    }
+    if (url) window.open(url, '_blank');
   }
 
   // Enter navigation
