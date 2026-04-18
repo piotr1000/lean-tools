@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tablica Kompetencji</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>* { box-sizing: border-box; } body { margin: 0; padding: 0; }</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useRef, useEffect } = React;
+
+
+// ── Kolory 1:1 z tablicy SQDP ──────────────────────────────────────────────
+// 0 = szary (nie dotyczy / So/Nd style)
+// 1 = czerwony  → problem (jak × problem w SQDP)
+// 2 = pomarańczowy → uwaga (jak ! uwaga w SQDP)
+// 3 = jasny zielony → cel (jak ✓ cel w SQDP)
+// 4 = ciemny zielony → mistrz / może szkolić
+const RATING_CONFIG = {
+  0: { label: "Nie dotyczy",           bg: "#e5e7eb", text: "#9ca3af", border: "#d1d5db" },
+  1: { label: "Pełne wsparcie dozoru", bg: "#fee2e2", text: "#b91c1c", border: "#fca5a5" },
+  2: { label: "Częściowe wsparcie",    bg: "#ffedd5", text: "#c2410c", border: "#fdba74" },
+  3: { label: "Samodzielnie",          bg: "#dcfce7", text: "#15803d", border: "#86efac" },
+  4: { label: "Może szkolić innych",   bg: "#16a34a", text: "#ffffff", border: "#15803d" },
+};
+
+const DOT_COLORS = {
+  0: "#d1d5db",
+  1: "#ef4444",
+  2: "#f97316",
+  3: "#22c55e",
+  4: "#15803d",
+};
+
+const DEFAULT_SKILLS = [
+  "Przyjmowanie dostaw", "Kompletacja\n(Picking)", "Obsługa\nWMS/ERP",
+  "Inwentaryzacja", "Zasady\nSkładowania", "Obsługa\nSprzętu",
+  "Wózki widłowe\n(UDT)", "Szkolenie\nBHP", "Praca pod\npresją", "Komunikat-\nywność"
+];
+
+const DEFAULT_EMPLOYEES = [
+  { name: "Jan Kowalski",       role: "Operator" },
+  { name: "Anna Nowak",         role: "Operator" },
+  { name: "Teresa Koźlowska",   role: "Lider" },
+  { name: "Piotr Tokarz",       role: "Operator" },
+  { name: "Adam Bawarski",      role: "Operator" },
+  { name: "Jolanta Treń",       role: "Operator" },
+  { name: "Anna Karaś",         role: "Operator" },
+  { name: "Marek Wiśniewski",   role: "Operator" },
+  { name: "Katarzyna Zając",    role: "Lider" },
+  { name: "Tomasz Nowicki",     role: "Operator" },
+];
+
+function seedData(employees, skills) {
+  return employees.map(() => skills.map(() => Math.floor(Math.random() * 5)));
+}
+
+function Editable({ value, onChange, style, placeholder, multiline }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const ref = useRef(null);
+  useEffect(() => { setDraft(value); }, [value]);
+  useEffect(() => { if (editing && ref.current) ref.current.focus(); }, [editing]);
+  const commit = () => { setEditing(false); onChange(draft.trim() || value); };
+  const shared = {
+    style: {
+      fontFamily: "inherit", fontSize: "inherit", fontWeight: "inherit",
+      color: "#0f172a", background: "#fff", border: "2px solid #0ea5e9",
+      borderRadius: 4, padding: "2px 6px", outline: "none",
+      width: "100%", maxWidth: "100%", boxSizing: "border-box",
+      resize: "none", overflow: "hidden",
+    },
+    onBlur: commit,
+    onKeyDown: e => {
+      if (e.key === "Enter" && !e.shiftKey) commit();
+      if (e.key === "Escape") { setDraft(value); setEditing(false); }
+    },
+  };
+  if (editing) {
+    return multiline
+      ? <textarea ref={ref} rows={2} value={draft} onChange={e => setDraft(e.target.value)} {...shared} />
+      : <input ref={ref} value={draft} onChange={e => setDraft(e.target.value)} {...shared} />;
+  }
+  return (
+    <span
+      style={{ ...style, cursor: "text", whiteSpace: "pre-line" }}
+      onDoubleClick={() => setEditing(true)}
+      title="Kliknij dwukrotnie, aby edytować"
+    >
+      {value || <span style={{ opacity: 0.35, fontStyle: "italic" }}>{placeholder}</span>}
+    </span>
+  );
+}
+
+function RatingCell({ value, onChange }) {
+  const cfg = RATING_CONFIG[value];
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      onClick={() => onChange((value + 1) % 5)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={`${value} – ${cfg.label}\nKliknij, aby zmienić`}
+      style={{
+        width: 42, height: 42, borderRadius: 8,
+        background: cfg.bg, color: cfg.text,
+        border: `2px solid ${cfg.border}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 17, fontWeight: 800, cursor: "pointer", margin: "0 auto",
+        transform: hovered ? "scale(1.18)" : "scale(1)",
+        boxShadow: hovered ? "0 4px 14px rgba(0,0,0,0.15)" : "0 1px 3px rgba(0,0,0,0.07)",
+        transition: "transform 0.12s, box-shadow 0.12s",
+        userSelect: "none",
+      }}
+    >{value}</div>
+  );
+}
+
+function Legend() {
+  return (
+    <div style={{ padding: "14px 16px" }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, color: "#64748b",
+        letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10,
+      }}>Klasyfikacja kompetencji</div>
+      {Object.entries(RATING_CONFIG).map(([k, v]) => (
+        <div key={k} style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 6, flexShrink: 0,
+            background: v.bg, color: v.text, border: `2px solid ${v.border}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 14, fontWeight: 800,
+          }}>{k}</div>
+          <span style={{ fontSize: 11, color: "#334155", lineHeight: 1.35 }}>{v.label}</span>
+        </div>
+      ))}
+      <div style={{
+        marginTop: 10, paddingTop: 8, borderTop: "1px solid #e2e8f0",
+        fontSize: 10, color: "#94a3b8", lineHeight: 1.7,
+      }}>
+        🖱 Kliknij komórkę — zmień ocenę<br />
+        ✏️ Dwuklik nazwy — edytuj tekst
+      </div>
+    </div>
+  );
+}
+
+function DeptBadge() {
+  const [editing, setEditing] = useState(false);
+  const [dept, setDept] = useState("Magazyn");
+  const [draft, setDraft] = useState("Magazyn");
+  const ref = useRef(null);
+  useEffect(() => { if (editing && ref.current) ref.current.focus(); }, [editing]);
+  const commit = () => { setEditing(false); setDept(draft.trim() || dept); };
+  if (editing) {
+    return (
+      <input
+        ref={ref}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(dept); setEditing(false); } }}
+        style={{
+          background: "#0ea5e9", border: "2px solid #38bdf8", borderRadius: 6,
+          color: "#fff", padding: "3px 10px", fontSize: 12, fontWeight: 600,
+          outline: "none", width: 120, fontFamily: "inherit",
+        }}
+      />
+    );
+  }
+  return (
+    <div
+      onClick={() => { setDraft(dept); setEditing(true); }}
+      title="Kliknij, aby zmienić nazwę działu"
+      style={{
+        background: "#334155", color: "#e2e8f0",
+        borderRadius: 6, padding: "3px 12px",
+        fontSize: 12, fontWeight: 600, cursor: "pointer",
+        border: "1px solid #475569", display: "flex", alignItems: "center", gap: 6,
+        transition: "background 0.15s",
+        userSelect: "none",
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = "#0ea5e9"}
+      onMouseLeave={e => e.currentTarget.style.background = "#334155"}
+    >
+      ✏️ {dept}
+    </div>
+  );
+}
+
+function App() {
+  const [skills,    setSkills]    = useState(DEFAULT_SKILLS);
+  const [employees, setEmployees] = useState(DEFAULT_EMPLOYEES);
+  const [data,      setData]      = useState(() => seedData(DEFAULT_EMPLOYEES, DEFAULT_SKILLS));
+  const [showStats, setShowStats] = useState(false);
+
+  const setRating = (ri, ci, v) =>
+    setData(d => d.map((r, i) => i === ri ? r.map((c, j) => j === ci ? v : c) : r));
+
+  const updateSkill    = (i, v) => setSkills(s => s.map((x, j) => j === i ? v : x));
+  const updateEmployee = (i, f, v) => setEmployees(e => e.map((x, j) => j === i ? { ...x, [f]: v } : x));
+
+  const addRow = () => {
+    setEmployees(e => [...e, { name: `Pracownik ${e.length + 1}`, role: "Operator" }]);
+    setData(d => [...d, skills.map(() => 0)]);
+  };
+  const addCol = () => {
+    setSkills(s => [...s, `Kompetencja\n${s.length + 1}`]);
+    setData(d => d.map(r => [...r, 0]));
+  };
+  const removeRow = i => {
+    if (employees.length <= 1) return;
+    setEmployees(e => e.filter((_, j) => j !== i));
+    setData(d => d.filter((_, j) => j !== i));
+  };
+  const removeCol = i => {
+    if (skills.length <= 1) return;
+    setSkills(s => s.filter((_, j) => j !== i));
+    setData(d => d.map(r => r.filter((_, j) => j !== i)));
+  };
+
+  const rowAvg = data.map(row => {
+    const v = row.filter(x => x > 0);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  });
+  const colAvg = skills.map((_, ci) => {
+    const v = data.map(r => r[ci]).filter(x => x > 0);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  });
+
+  const total = data.flat().length;
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Segoe UI', -apple-system, sans-serif" }}>
+
+      {/* TOP NAV — identyczny styl jak w SQDP Board */}
+      <div style={{
+        background: "#1e293b", padding: "0 20px", height: 52,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+        position: "sticky", top: 0, zIndex: 100,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ color: "#fff", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", textTransform: "uppercase" }}>Tablica Kompetencji</span>
+          <DeptBadge />
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            onClick={() => setShowStats(!showStats)}
+            style={{
+              background: showStats ? "#0ea5e9" : "transparent",
+              border: `1px solid ${showStats ? "#0ea5e9" : "#475569"}`,
+              borderRadius: 8, color: showStats ? "#fff" : "#94a3b8",
+              padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600,
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >📊 {showStats ? "Ukryj" : "Statystyki"}</button>
+          <div style={{
+            background: "#334155", borderRadius: 8,
+            padding: "6px 12px", color: "#94a3b8", fontSize: 11, fontWeight: 600,
+          }}>{employees.length} prac. · {skills.length} komp.</div>
+        </div>
+      </div>
+
+      <div style={{ padding: 20 }}>
+
+        {/* Stats cards — styl jak "STATYSTYKI BŁĘDÓW" w SQDP */}
+        {showStats && (
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginBottom: 16,
+          }}>
+            {[0,1,2,3,4].map(v => {
+              const cnt = data.flat().filter(x => x === v).length;
+              const pct = total ? Math.round(cnt / total * 100) : 0;
+              const cfg = RATING_CONFIG[v];
+              return (
+                <div key={v} style={{
+                  background: "#fff", borderRadius: 10,
+                  border: "1px solid #e2e8f0",
+                  padding: "12px 14px",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: 6, flexShrink: 0,
+                      background: cfg.bg, color: cfg.text, border: `2px solid ${cfg.border}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 13, fontWeight: 800,
+                    }}>{v}</div>
+                    <span style={{ fontSize: 10, color: "#64748b", lineHeight: 1.3 }}>{cfg.label}</span>
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: cfg.text }}>
+                    {cnt}
+                    <span style={{ fontSize: 12, fontWeight: 400, color: "#94a3b8", marginLeft: 4 }}>({pct}%)</span>
+                  </div>
+                  <div style={{ height: 3, background: "#f1f5f9", borderRadius: 2, marginTop: 8 }}>
+                    <div style={{ height: "100%", width: `${pct}%`, background: DOT_COLORS[v], borderRadius: 2, transition: "width 0.4s" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* MAIN TABLE */}
+        <div style={{
+          background: "#fff", borderRadius: 12,
+          border: "1px solid #e2e8f0",
+          boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+          overflow: "hidden",
+        }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", tableLayout: "fixed", minWidth: "100%" }}>
+              <colgroup>
+                <col style={{ width: 36 }} />
+                <col style={{ width: 175 }} />
+                <col style={{ width: 80 }} />
+                {skills.map((_, i) => <col key={i} style={{ width: 70 }} />)}
+                {showStats && <col style={{ width: 60 }} />}
+                <col style={{ width: 44 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  {/* Legend spanning first 3 cols */}
+                  <td colSpan={3} style={{
+                    background: "#f8fafc", verticalAlign: "top", padding: 0,
+                    borderBottom: "0", borderRight: "2px solid #cbd5e1",
+                  }}>
+                    <Legend />
+                  </td>
+
+                  {/* Rotated skill headers */}
+                  {skills.map((skill, ci) => (
+                    <th key={ci} style={{
+                      padding: "8px 4px 0px", background: "#f8fafc",
+                      borderBottom: "2px solid #e2e8f0", borderRight: "1px solid #e2e8f0",
+                      verticalAlign: "bottom", textAlign: "center",
+                      overflow: "hidden", position: "relative",
+                    }}>
+                      <div style={{
+                        display: "flex", flexDirection: "column", alignItems: "center",
+                        gap: 4, height: 180, paddingBottom: 22, overflow: "hidden",
+                      }}>
+                        <button onClick={() => removeCol(ci)} disabled={skills.length <= 1} style={{
+                          background: "#fee2e2", border: "1px solid #fca5a5",
+                          borderRadius: 4, color: "#b91c1c",
+                          cursor: skills.length <= 1 ? "not-allowed" : "pointer",
+                          fontSize: 9, padding: "2px 5px", fontWeight: 700,
+                          opacity: skills.length <= 1 ? 0.3 : 1,
+                          flexShrink: 0,
+                        }}>✕</button>
+                        <div style={{
+                          writingMode: "vertical-rl", transform: "rotate(180deg)",
+                          flex: 1, display: "flex", alignItems: "center",
+                          justifyContent: "center", overflow: "hidden",
+                          maxHeight: "100%",
+                        }}>
+                          <Editable
+                            value={skill} onChange={v => updateSkill(ci, v)}
+                            placeholder="Kompetencja" multiline
+                            style={{
+                              fontSize: 11, fontWeight: 600, color: "#334155",
+                              textAlign: "center", lineHeight: 1.4,
+                              maxWidth: 130, overflow: "hidden",
+                            }}
+                          />
+                        </div>
+                        {showStats && colAvg[ci] !== null && (
+                          <div style={{
+                            width: 8,
+                            height: `${(colAvg[ci] / 4) * 32}px`,
+                            background: DOT_COLORS[Math.round(colAvg[ci])],
+                            borderRadius: 4, flexShrink: 0, transition: "height 0.3s",
+                            minHeight: 2,
+                          }} />
+                        )}
+                      </div>
+                    </th>
+                  ))}
+
+                  {showStats && (
+                    <th style={{
+                      background: "#f8fafc", borderBottom: "2px solid #e2e8f0",
+                      borderLeft: "2px solid #cbd5e1", padding: 4, verticalAlign: "bottom", textAlign: "center",
+                    }}>
+                      <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em" }}>ŚR</div>
+                    </th>
+                  )}
+                  <th style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0" }} />
+                </tr>
+
+                {/* Column labels row: #, Imię i Nazwisko, Stanowisko */}
+                <tr>
+                  <td style={{
+                    background: "#f0f4f8", borderBottom: "2px solid #e2e8f0",
+                    borderRight: "1px solid #e2e8f0", padding: "6px 4px",
+                    textAlign: "center",
+                  }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.08em", textTransform: "uppercase" }}>#</span>
+                  </td>
+                  <td style={{
+                    background: "#f0f4f8", borderBottom: "2px solid #e2e8f0",
+                    borderRight: "1px solid #e2e8f0", padding: "6px 12px",
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase" }}>Imię i Nazwisko</span>
+                  </td>
+                  <td style={{
+                    background: "#f0f4f8", borderBottom: "2px solid #e2e8f0",
+                    borderRight: "2px solid #cbd5e1", padding: "6px 8px",
+                    textAlign: "center",
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase" }}>Stanowisko</span>
+                  </td>
+                  {skills.map((_, ci) => (
+                    <td key={ci} style={{
+                      background: "#f0f4f8", borderBottom: "2px solid #e2e8f0",
+                      borderRight: "1px solid #e2e8f0",
+                    }} />
+                  ))}
+                  {showStats && <td style={{ background: "#f0f4f8", borderBottom: "2px solid #e2e8f0", borderLeft: "2px solid #cbd5e1" }} />}
+                  <td style={{ background: "#f0f4f8", borderBottom: "2px solid #e2e8f0" }} />
+                </tr>
+
+                {showStats && (
+                  <tr style={{ background: "#f8fafc" }}>
+                    <td colSpan={3} style={{
+                      padding: "6px 12px", fontSize: 10, fontWeight: 700,
+                      color: "#94a3b8", textAlign: "right", letterSpacing: "0.08em",
+                      borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #cbd5e1",
+                    }}>ŚR. KOMPETENCJI →</td>
+                    {colAvg.map((avg, ci) => {
+                      const rnd = avg !== null ? Math.round(avg) : null;
+                      const cfg = rnd !== null ? RATING_CONFIG[rnd] : null;
+                      return (
+                        <td key={ci} style={{
+                          textAlign: "center", padding: "5px 3px",
+                          borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0",
+                          fontSize: 12, fontWeight: 700,
+                          background: cfg ? cfg.bg : "transparent",
+                          color: cfg ? cfg.text : "#94a3b8",
+                        }}>{avg !== null ? avg.toFixed(1) : "–"}</td>
+                      );
+                    })}
+                    <td style={{ borderBottom: "1px solid #e2e8f0", borderLeft: "2px solid #cbd5e1" }} />
+                    <td style={{ borderBottom: "1px solid #e2e8f0" }} />
+                  </tr>
+                )}
+              </thead>
+
+              <tbody>
+                {employees.map((emp, ri) => {
+                  const avg = rowAvg[ri];
+                  const rnd = avg !== null ? Math.round(avg) : null;
+                  const avgCfg = rnd !== null ? RATING_CONFIG[rnd] : null;
+                  return (
+                    <tr key={ri} style={{ background: ri % 2 === 0 ? "#fff" : "#f8fafc" }}>
+                      <td style={{
+                        textAlign: "center", fontSize: 12, fontWeight: 600, color: "#94a3b8",
+                        padding: "10px 4px", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0",
+                      }}>{ri + 1}</td>
+                      <td style={{ padding: "10px 12px", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0" }}>
+                        <Editable
+                          value={emp.name} onChange={v => updateEmployee(ri, "name", v)}
+                          placeholder="Imię Nazwisko"
+                          style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", display: "block" }}
+                        />
+                      </td>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid #e2e8f0", borderRight: "2px solid #cbd5e1", textAlign: "center" }}>
+                        <Editable
+                          value={emp.role} onChange={v => updateEmployee(ri, "role", v)}
+                          placeholder="Rola"
+                          style={{
+                            fontSize: 10, fontWeight: 700, color: "#475569",
+                            textTransform: "uppercase", letterSpacing: "0.06em",
+                          }}
+                        />
+                      </td>
+                      {(data[ri] || []).map((val, ci) => (
+                        <td key={ci} style={{
+                          padding: "8px 4px", textAlign: "center",
+                          borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0",
+                        }}>
+                          <RatingCell value={val} onChange={nv => setRating(ri, ci, nv)} />
+                        </td>
+                      ))}
+                      {showStats && (
+                        <td style={{
+                          padding: "8px 6px", textAlign: "center",
+                          borderBottom: "1px solid #e2e8f0", borderLeft: "2px solid #cbd5e1",
+                          fontSize: 13, fontWeight: 800,
+                          background: avgCfg ? avgCfg.bg : "transparent",
+                          color: avgCfg ? avgCfg.text : "#94a3b8",
+                        }}>{avg !== null ? avg.toFixed(1) : "–"}</td>
+                      )}
+                      <td style={{ padding: "8px 4px", textAlign: "center", borderBottom: "1px solid #e2e8f0" }}>
+                        <button
+                          onClick={() => removeRow(ri)} disabled={employees.length <= 1}
+                          style={{
+                            background: "#fee2e2", border: "1px solid #fca5a5",
+                            borderRadius: 6, color: "#b91c1c",
+                            cursor: employees.length <= 1 ? "not-allowed" : "pointer",
+                            fontSize: 11, padding: "4px 7px", fontWeight: 700,
+                            opacity: employees.length <= 1 ? 0.3 : 1,
+                          }}
+                          title="Usuń pracownika"
+                        >✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr>
+                  <td colSpan={3 + skills.length + (showStats ? 1 : 0) + 1} style={{ padding: "10px 12px" }}>
+                    <button
+                      onClick={addRow}
+                      style={{
+                        width: "100%", background: "transparent",
+                        border: "2px dashed #cbd5e1", borderRadius: 8,
+                        color: "#64748b", cursor: "pointer", padding: "10px",
+                        fontSize: 13, fontWeight: 600,
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                        transition: "all 0.15s",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = "#0ea5e9"; e.currentTarget.style.color = "#0ea5e9"; e.currentTarget.style.background = "#f0f9ff"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = "#cbd5e1"; e.currentTarget.style.color = "#64748b"; e.currentTarget.style.background = "transparent"; }}
+                    ><span style={{ fontSize: 16 }}>＋</span> Dodaj pracownika</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{
+            padding: "10px 12px 14px", borderTop: "1px solid #e2e8f0",
+            display: "flex", justifyContent: "flex-end",
+          }}>
+            <button
+              onClick={addCol}
+              style={{
+                background: "transparent", border: "2px dashed #cbd5e1",
+                borderRadius: 8, color: "#64748b", cursor: "pointer",
+                padding: "8px 20px", fontSize: 13, fontWeight: 600,
+                display: "flex", alignItems: "center", gap: 8,
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#22c55e"; e.currentTarget.style.color = "#15803d"; e.currentTarget.style.background = "#f0fdf4"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#cbd5e1"; e.currentTarget.style.color = "#64748b"; e.currentTarget.style.background = "transparent"; }}
+            ><span style={{ fontSize: 16 }}>＋</span> Dodaj kompetencję</button>
+          </div>
+        </div>
+
+        {/* Legend dots row — jak w SQDP pod kołem */}
+        <div style={{
+          marginTop: 14, display: "flex", alignItems: "center",
+          gap: 20, justifyContent: "center", flexWrap: "wrap",
+        }}>
+          {Object.entries(RATING_CONFIG).map(([k, v]) => (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: DOT_COLORS[k] }} />
+              <span style={{ fontSize: 11, color: "#64748b" }}>
+                <strong style={{ color: "#334155" }}>{k}</strong> {v.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
