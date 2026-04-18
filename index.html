@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lean Tools — Panel Narzędzi</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --navy: #0f1117;
+    --navy2: #1a1d2e;
+    --navy3: #252840;
+    --accent: #e8c84a;
+    --accent2: #f0a500;
+    --text: #f0ede8;
+    --text2: #9a9890;
+    --text3: #5a5855;
+    --border: rgba(255,255,255,0.08);
+    --s: #e67e22;
+    --q: #27ae60;
+    --d: #2980b9;
+    --p: #c0392b;
+  }
+
+  html, body {
+    min-height: 100vh;
+    font-family: 'DM Sans', sans-serif;
+    background: var(--navy);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  /* ── BACKGROUND GRID ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232,200,74,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,200,74,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── LOGIN SCREEN ── */
+  #loginScreen {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  .login-top {
+    text-align: center;
+    margin-bottom: 2.5rem;
+    animation: fadeUp 0.6s ease both;
+  }
+
+  .logo-row {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .logo-l {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 18px; font-weight: 500;
+    color: #fff;
+    position: relative;
+  }
+
+  .logo-l::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+
+  .tagline {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 2rem;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .quote-block {
+    max-width: 340px;
+    margin: 0 auto;
+    padding: 1.25rem 1.5rem;
+    border-left: 2px solid var(--accent);
+    background: rgba(232,200,74,0.04);
+    border-radius: 0 8px 8px 0;
+    text-align: left;
+  }
+
+  .quote-text {
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text2);
+    font-style: italic;
+    margin-bottom: 0.5rem;
+  }
+
+  .quote-src {
+    font-size: 11px;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* LOGIN CARD */
+  .login-card {
+    background: var(--navy2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 380px;
+    animation: fadeUp 0.6s 0.15s ease both;
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text2);
+    margin-bottom: 1.5rem;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+
+  .field { margin-bottom: 1rem; }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--text3);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .field input {
+    width: 100%;
+    padding: 11px 14px;
+    background: var(--navy3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'DM Sans', sans-serif;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .field input:focus { border-color: var(--accent); }
+  .field input::placeholder { color: var(--text3); }
+
+  .btn-login {
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 12px;
+    background: var(--accent);
+    color: var(--navy);
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+
+  .btn-login:hover { background: var(--accent2); }
+  .btn-login:active { transform: scale(0.98); }
+
+  .err {
+    font-size: 12px;
+    color: #e74c3c;
+    margin-top: 0.75rem;
+    text-align: center;
+    display: none;
+  }
+
+  .login-footer {
+    margin-top: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+    animation: fadeUp 0.6s 0.3s ease both;
+  }
+
+  .dot-green {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 6px #22c55e;
+  }
+
+  /* ── DASHBOARD ── */
+  #dashboard { display: none; min-height: 100vh; position: relative; z-index: 1; }
+
+  .dash-nav {
+    background: var(--navy2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 1.5rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .nav-logo { display: flex; align-items: center; gap: 10px; }
+  .nav-letters { display: flex; gap: 3px; }
+
+  .nav-l {
+    width: 26px; height: 26px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; font-weight: 500; color: #fff;
+  }
+
+  .nav-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .nav-version {
+    font-size: 10px;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+    margin-left: 4px;
+  }
+
+  .nav-right { display: flex; align-items: center; gap: 12px; }
+
+  .nav-user {
+    font-size: 12px;
+    color: var(--text2);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .btn-out {
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text2);
+    font-size: 12px;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .btn-out:hover { border-color: var(--text3); color: var(--text); }
+
+  /* DASH CONTENT */
+  .dash-body { padding: 2rem 1.5rem; max-width: 900px; margin: 0 auto; }
+
+  .dash-greeting {
+    margin-bottom: 2rem;
+    animation: fadeUp 0.4s ease both;
+  }
+
+  .dash-greeting h1 {
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .dash-greeting p {
+    font-size: 13px;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 1rem;
+  }
+
+  /* APP GRID */
+  .apps-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 2rem;
+  }
+
+  @media (max-width: 560px) {
+    .apps-grid { grid-template-columns: 1fr; }
+  }
+
+  .app-card {
+    background: var(--navy2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.15s, background 0.2s;
+    animation: fadeUp 0.4s ease both;
+    text-decoration: none;
+    display: block;
+  }
+
+  .app-card:hover {
+    border-color: rgba(232,200,74,0.3);
+    background: var(--navy3);
+    transform: translateY(-2px);
+  }
+
+  .app-card:nth-child(1) { animation-delay: 0.05s; }
+  .app-card:nth-child(2) { animation-delay: 0.1s; }
+  .app-card:nth-child(3) { animation-delay: 0.15s; }
+  .app-card:nth-child(4) { animation-delay: 0.2s; }
+
+  .app-icon-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .app-icon {
+    width: 46px; height: 46px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px; font-weight: 500;
+    color: #fff;
+    letter-spacing: 0.05em;
+  }
+
+  .app-status {
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: rgba(34,197,94,0.1);
+    color: #22c55e;
+    border: 1px solid rgba(34,197,94,0.2);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .app-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .app-desc {
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.55;
+  }
+
+  .app-arrow {
+    margin-top: 1rem;
+    font-size: 11px;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.2s, gap 0.2s;
+  }
+
+  .app-card:hover .app-arrow {
+    color: var(--accent);
+    gap: 8px;
+  }
+
+  /* INFO BAR */
+  .info-bar {
+    padding: 1rem 1.25rem;
+    background: rgba(232,200,74,0.04);
+    border: 1px solid rgba(232,200,74,0.1);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text3);
+    font-family: 'DM Mono', monospace;
+    animation: fadeUp 0.4s 0.3s ease both;
+  }
+
+  .info-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+  /* ANIMATIONS */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ LOGIN ═══════════════════════════════ -->
+<div id="loginScreen">
+  <div class="login-top">
+    <div class="logo-row">
+      <div class="logo-l" style="background:#b85c1a;">S</div>
+      <div class="logo-l" style="background:#1a7a42;">Q</div>
+      <div class="logo-l" style="background:#1a5a8a;">D</div>
+      <div class="logo-l" style="background:#8a1a1a;">P</div>
+    </div>
+    <div class="tagline">Lean Tools · Panel Narzędzi Produkcyjnych</div>
+    <div class="quote-block">
+      <p class="quote-text">„Nie bój się powolności.<br>Bój się stania w miejscu."</p>
+      <p class="quote-src">— Filozofia Kaizen · Toyota Production System</p>
+    </div>
+  </div>
+
+  <div class="login-card">
+    <p class="card-title">// Dostęp do panelu</p>
+    <div class="field">
+      <label>Login</label>
+      <input type="text" id="loginInput" placeholder="Wpisz login" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>Hasło</label>
+      <input type="password" id="passInput" placeholder="Wpisz hasło" />
+    </div>
+    <button class="btn-login" onclick="doLogin()">Zaloguj się →</button>
+    <p class="err" id="errMsg">Nieprawidłowy login lub hasło</p>
+  </div>
+
+  <div class="login-footer">
+    <div class="dot-green"></div>
+    Wersja testowa · dostęp tylko dla zaproszonych
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ DASHBOARD ═══════════════════════════════ -->
+<div id="dashboard">
+  <nav class="dash-nav">
+    <div class="nav-logo">
+      <div class="nav-letters">
+        <div class="nav-l" style="background:#b85c1a;">S</div>
+        <div class="nav-l" style="background:#1a7a42;">Q</div>
+        <div class="nav-l" style="background:#1a5a8a;">D</div>
+        <div class="nav-l" style="background:#8a1a1a;">P</div>
+      </div>
+      <span class="nav-name">Lean Tools</span>
+      <span class="nav-version">v0.1-beta</span>
+    </div>
+    <div class="nav-right">
+      <span class="nav-user" id="navUser"></span>
+      <button class="btn-out" onclick="doLogout()">Wyloguj</button>
+    </div>
+  </nav>
+
+  <div class="dash-body">
+    <div class="dash-greeting">
+      <h1>Witaj w panelu narzędzi Lean 👋</h1>
+      <p>Wybierz narzędzie które chcesz otworzyć</p>
+    </div>
+
+    <p class="section-label">Dostępne aplikacje</p>
+
+    <div class="apps-grid">
+
+      <div class="app-card" onclick="openApp('sqdp')">
+        <div class="app-icon-row">
+          <div class="app-icon" style="background: linear-gradient(135deg,#b85c1a,#8a1a1a);">SQDP</div>
+          <span class="app-status">Aktywna</span>
+        </div>
+        <div class="app-name">Tablica SQDP</div>
+        <div class="app-desc">Safety, Quality, Delivery, Production — dzienny monitoring KPI linii produkcyjnych</div>
+        <div class="app-arrow">Otwórz →</div>
+      </div>
+
+      <div class="app-card" onclick="openApp('kamishibai')">
+        <div class="app-icon-row">
+          <div class="app-icon" style="background: linear-gradient(135deg,#1a2a5a,#1a5a8a);">KAM</div>
+          <span class="app-status">Aktywna</span>
+        </div>
+        <div class="app-name">Tablica Kamishibai</div>
+        <div class="app-desc">Tygodniowe audyty obszarów — kontrola standardów i działania korygujące</div>
+        <div class="app-arrow">Otwórz →</div>
+      </div>
+
+      <div class="app-card" onclick="openApp('kompetencje')">
+        <div class="app-icon-row">
+          <div class="app-icon" style="background: linear-gradient(135deg,#1a5a2a,#0d3a1a);">KOM</div>
+          <span class="app-status">Aktywna</span>
+        </div>
+        <div class="app-name">Tablica Kompetencji</div>
+        <div class="app-desc">Matryca umiejętności zespołu — poziomy 0–4, śledzenie rozwoju pracowników</div>
+        <div class="app-arrow">Otwórz →</div>
+      </div>
+
+      <div class="app-card" onclick="openApp('kaizen')">
+        <div class="app-icon-row">
+          <div class="app-icon" style="background: linear-gradient(135deg,#8a6a0a,#5a4008);">KAI</div>
+          <span class="app-status">Aktywna</span>
+        </div>
+        <div class="app-name">Tablica Kaizen</div>
+        <div class="app-desc">Zarządzanie pomysłami usprawnień — kanban, punktacja, ranking miesięczny</div>
+        <div class="app-arrow">Otwórz →</div>
+      </div>
+
+    </div>
+
+    <div class="info-bar">
+      <div class="info-dot"></div>
+      Wersja testowa v0.1-beta · Feedback kieruj do administratora systemu · Aplikacje są w fazie pilotażu
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── CREDENTIALS ──
+  const USERS = {
+    "Unisystem": "Lean2026!"
+  };
+
+  // ── APP LINKS (uzupełnij gdy aplikacje będą gotowe) ──
+  const APPS = {
+    sqdp:        '#',   // docelowo: URL do tablicy SQDP
+    kamishibai:  '#',   // docelowo: URL do Kamishibai
+    kompetencje: '#',   // docelowo: URL do tablicy kompetencji
+    kaizen:      '#'    // docelowo: URL do tablicy Kaizen
+  };
+
+  function doLogin() {
+    const login = document.getElementById('loginInput').value.trim();
+    const pass  = document.getElementById('passInput').value;
+    const err   = document.getElementById('errMsg');
+
+    if (USERS[login] && USERS[login] === pass) {
+      err.style.display = 'none';
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('dashboard').style.display   = 'block';
+      document.getElementById('navUser').textContent = '// ' + login;
+    } else {
+      err.style.display = 'block';
+    }
+  }
+
+  function doLogout() {
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('dashboard').style.display   = 'none';
+    document.getElementById('loginInput').value = '';
+    document.getElementById('passInput').value  = '';
+  }
+
+  function openApp(name) {
+    const url = APPS[name];
+    if (url && url !== '#') {
+      window.open(url, '_blank');
+    } else {
+      alert('Aplikacja "' + name + '" będzie dostępna wkrótce.');
+    }
+  }
+
+  // Enter navigation
+  document.getElementById('loginInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('passInput').focus();
+  });
+  document.getElementById('passInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+</script>
+</body>
+</html>
