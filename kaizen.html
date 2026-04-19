@@ -263,7 +263,8 @@ function App() {
       {flash&&<div style={{position:"fixed",top:"16px",left:"50%",transform:"translateX(-50%)",background:C.navyDark,border:`1px solid ${C.gold}`,color:"#f5f0dc",padding:"8px 22px",borderRadius:"8px",zIndex:200,fontSize:"13px",fontWeight:"600",boxShadow:"0 4px 20px #0006"}}>{flash.msg}</div>}
 
       {/* HEADER */}
-      <div style={{background:C.navyDark,borderBottom:`3px solid ${C.gold}`,padding:"10px 20px",display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
+      <div style={{background:C.navyDark,borderBottom:`3px solid ${C.gold}`}}>
+        <div style={{maxWidth:"1600px",margin:"0 auto",padding:"10px 20px",display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
         <div>
           <div style={{color:"#8a9ab5",fontSize:"10px",letterSpacing:"2px",fontWeight:"600"}}>TABLICA POMYSŁÓW</div>
           <div style={{color:C.cyan,fontSize:"22px",fontWeight:"800",letterSpacing:"2px"}}>KAIZEN</div>
@@ -282,23 +283,27 @@ function App() {
           ))}
         </div>
         <button onClick={()=>setShowRanking(true)} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${C.gold}`,color:C.gold,padding:"6px 18px",borderRadius:"5px",cursor:"pointer",fontSize:"13px",fontWeight:"700",letterSpacing:"1px",fontFamily:"inherit"}}>🏆 Ranking</button>
+        </div>
       </div>
 
       {/* PROGRESS */}
-      <div style={{background:C.navyMid,borderBottom:`1px solid ${C.gold}44`,padding:"7px 20px",display:"flex",alignItems:"center",gap:"12px"}}>
+      <div style={{background:C.navyMid,borderBottom:`1px solid ${C.gold}44`}}>
+        <div style={{maxWidth:"1600px",margin:"0 auto",padding:"7px 20px",display:"flex",alignItems:"center",gap:"12px"}}>
         <span style={{fontSize:"11px",color:"#c8c0b0",whiteSpace:"nowrap"}}>CEL MIESIĄCA: {acceptedCount}/{MONTHLY_GOAL} zatwierdzonych</span>
         <div style={{flex:1,background:"#111a2a",borderRadius:"10px",height:"7px",overflow:"hidden"}}>
           <div style={{width:`${progressPct}%`,height:"100%",background:progressPct>=100?C.green:`linear-gradient(90deg,${C.cyan},${C.gold})`,borderRadius:"10px",transition:"width 0.5s ease"}}/>
         </div>
         <span style={{fontSize:"11px",color:progressPct>=100?C.green:C.gold,fontWeight:"600",whiteSpace:"nowrap"}}>{progressPct>=100?"🎉 CEL OSIĄGNIĘTY!":progressPct+"%"}</span>
+        </div>
       </div>
 
       {/* KANBAN – fixed height columns with scroll */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1px",background:C.gold+"55",margin:"14px 16px 0",borderRadius:"8px",overflow:"hidden",border:`1px solid ${C.gold}55`}}>
+      <div style={{maxWidth:"1600px",margin:"14px auto 0",padding:"0 16px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1px",background:C.gold+"55",borderRadius:"8px",overflow:"hidden",border:`1px solid ${C.gold}55`}}>
         {KANBAN_COLS.map(col=>{
           const isAccepted=col.key==="accepted";
           return (
-            <div key={col.key} style={{background:C.cream4,display:"flex",flexDirection:"column"}}>
+            <div key={col.key} style={{background:C.cream4,display:"flex",flexDirection:"column",maxWidth:"380px",width:"100%"}}>
               {/* Column header */}
               <div style={{background:C.navyMid,padding:"10px 12px",textAlign:"center",fontWeight:"800",fontSize:"10px",letterSpacing:"1.5px",color:"#fff",borderBottom:`2px solid ${col.color}`,display:"flex",alignItems:"center",justifyContent:"center",gap:"6px",flexShrink:0}}>
                 <span style={{width:"8px",height:"8px",borderRadius:"50%",background:col.color,display:"inline-block",flexShrink:0}}/>
@@ -372,9 +377,11 @@ function App() {
           );
         })}
       </div>
+      </div>
 
       {/* TABLE */}
-      <div style={{margin:"12px 16px 0",border:`1px solid ${C.gold}66`,borderRadius:"8px",overflow:"hidden",boxShadow:"0 2px 8px #0001"}}>
+      <div style={{maxWidth:"1600px",margin:"12px auto 0",padding:"0 16px"}}>
+      <div style={{border:`1px solid ${C.gold}66`,borderRadius:"8px",overflow:"hidden",boxShadow:"0 2px 8px #0001"}}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{background:C.navyMid}}>
@@ -425,9 +432,11 @@ function App() {
           <span style={{fontSize:"10px",color:C.textMid}}>System punktów: Zgłoszony +1 • W testach +3 • Standaryzacja +4 • Zaakceptowany +5</span>
         </div>
       </div>
+      </div>
 
       {/* PODIUM */}
-      <div style={{margin:"12px 16px 0",padding:"20px 16px 16px",background:C.cream1,border:`1px solid ${C.gold}66`,borderRadius:"8px",boxShadow:"0 2px 8px #0001"}}>
+      <div style={{maxWidth:"1600px",margin:"12px auto 0",padding:"0 16px"}}>
+      <div style={{padding:"20px 16px 16px",background:C.cream1,border:`1px solid ${C.gold}66`,borderRadius:"8px",boxShadow:"0 2px 8px #0001"}}>
         <div style={{textAlign:"center",color:C.navyDark,fontSize:"12px",fontWeight:"800",letterSpacing:"2px",marginBottom:"20px",borderBottom:`1px solid ${C.gold}44`,paddingBottom:"10px"}}>
           🏆 RANKING MIESIĄCA — {MONTHS_PL[monthIdx].toUpperCase()} {year}
         </div>
@@ -500,12 +509,15 @@ function App() {
           </>
         )}
       </div>
+      </div>
 
       {/* KAIZEN TIP */}
-      <div style={{margin:"12px 16px 16px",padding:"18px 24px",background:C.dyżurny+"55",border:`1px solid ${C.gold}88`,borderRadius:"6px",display:"flex",gap:"14px",alignItems:"center"}}>
+      <div style={{maxWidth:"1600px",margin:"12px auto 16px",padding:"0 16px"}}>
+      <div style={{padding:"18px 24px",background:C.dyżurny+"55",border:`1px solid ${C.gold}88`,borderRadius:"6px",display:"flex",gap:"14px",alignItems:"center"}}>
         <span style={{color:C.navyDark,fontSize:"13px",fontWeight:"800",whiteSpace:"nowrap",letterSpacing:"1px"}}>KAIZEN TIP:</span>
         <span style={{color:C.textMid,fontSize:"14px",flex:1,fontStyle:"italic",lineHeight:"1.7"}}>{KAIZEN_TIPS[tipIdx]}</span>
         <span style={{color:C.textMute,fontSize:"10px",whiteSpace:"nowrap"}}>{tipIdx+1}/{KAIZEN_TIPS.length}</span>
+      </div>
       </div>
 
       {/* RANKING MODAL */}
