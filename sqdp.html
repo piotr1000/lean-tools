@@ -1591,7 +1591,7 @@ const HIST_UNISYSTEM = (() => {
 })();
 
 // ─── SUMMARY SCREEN ───────────────────────────────────────────────────────────
-function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, setExtraData}) {
+function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, setExtraData, issues, locations}) {
   const now = new Date();
   const [summLine, setSummLine] = useState(lines[0]?.name || 'Unisystem');
   const [editingCol, setEditingCol] = useState(null);
@@ -1694,6 +1694,56 @@ function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, s
     setExtraCols(prev => prev.filter(c => c.id !== id));
   }
 
+  // ── Stałe etykiety dla kolumn "Poprawność wysyłek" i "Błędy" — edytowalne nazwy ──
+  const [colLabels, setColLabels] = useState(()=>{
+    try{ const s=localStorage.getItem('sqdp-col-labels'); return s?JSON.parse(s):{
+      poprawnosc_wyd:'Poprawność\nwydań %',
+      poprawnosc_wys:'Poprawność\nwysyłek %',
+      bledy_prod:'Błędy na\nProdukcję',
+      bledy_klient:'Błędy do\nklienta',
+    };}catch{return {
+      poprawnosc_wyd:'Poprawność\nwydań %',
+      poprawnosc_wys:'Poprawność\nwysyłek %',
+      bledy_prod:'Błędy na\nProdukcję',
+      bledy_klient:'Błędy do\nklienta',
+    };}
+  });
+  const [editingFixedCol, setEditingFixedCol] = useState(null);
+  function updateColLabel(id, val){
+    setColLabels(prev=>{
+      const next={...prev,[id]:val};
+      try{localStorage.setItem('sqdp-col-labels',JSON.stringify(next));}catch{}
+      return next;
+    });
+  }
+
+  // Pobierz błędy z issues dla danej linii i miesiąca
+  function getBledyForMonth(lineName, year, month){
+    const ms=`${year}-${String(month+1).padStart(2,'0')}`;
+    const locs = locations||DEFAULT_LOCATIONS;
+    const monthIssues = (issues||[])
+      .filter(i=>i.line===lineName && i.date && i.date.startsWith(ms));
+    const bledy_prod = monthIssues.filter(i=>{
+      const l=locs.find(x=>x.id===i.location);
+      return l && l.type==='prod';
+    }).length;
+    const bledy_klient = monthIssues.filter(i=>{
+      const l=locs.find(x=>x.id===i.location);
+      return l && l.type==='client';
+    }).length;
+    return {bledy_prod, bledy_klient};
+  }
+
+  // Poprawność wysyłek = (wysylki - nieterminowe) / wysylki × 100%
+  function calcPoprawnosc2(row){
+    const wysVal = getCell(row.key,'wysylki');
+    const nitVal = getCell(row.key,'nieterminowe');
+    const wys = parseFloat(wysVal);
+    const nit = parseFloat(nitVal ?? 0);
+    if(!wys || isNaN(wys)) return null;
+    return (wys - (isNaN(nit)?0:nit)) / wys;
+  }
+
   // Fixed columns definition
   const fixedCols = [
     {id:'S',   label:'S',      tooltip:'Safety %'},
@@ -1792,7 +1842,113 @@ function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, s
                 <th style={{...thStyle,minWidth:'5.0rem'}}>{'Wydania\nilość\npozycji'}</th>
                 <th style={{...thStyle,minWidth:'4.5rem'}}>{'Wydania\nilość\ndok.'}</th>
                 <th style={{...thStyle,background:'#7f1d1d',minWidth:'4.5rem'}}>{'Pomyłki\nwydań'}</th>
-                <th style={{...thStyle,background:'#064e3b',minWidth:'5.5rem'}}>{'Poprawność\nwydań %'}</th>
+                <th style={{...thStyle,background:'#064e3b',minWidth:'5.5rem',cursor:'pointer',userSelect:'none'}}
+                  onClick={()=>setEditingFixedCol(editingFixedCol==='poprawnosc_wyd'?null:'poprawnosc_wyd')}
+                  title="Kliknij aby edytować nazwę">
+                  {editingFixedCol==='poprawnosc_wyd'?(
+                    <input value={colLabels.poprawnosc_wyd}
+                      onChange={e=>updateColLabel('poprawnosc_wyd',e.target.value)}
+                      onBlur={()=>setEditingFixedCol(null)}
+                      onKeyDown={e=>e.key==='Enter'&&setEditingFixedCol(null)}
+                      autoFocus onClick={e=>e.stopPropagation()}
+                      style={{...inputStyle,color:'#0f172a',background:'white',borderRadius:'0.25rem',padding:'0.125rem 0.25rem',width:'5rem'}}/>
+                  ):(
+                    <span style={{whiteSpace:'pre-line',lineHeight:1.3}}>
+                      {colLabels.poprawnosc_wyd}
+                      <span style={{opacity:0.5,fontSize:'0.5625rem',display:'block'}}>✎</span>
+                    </span>
+                  )}
+                </th>
+                {/* Wysyłki PL/EX — editable */}
+                <th style={{...thStyle,minWidth:'4.5rem',cursor:'pointer',userSelect:'none'}}
+                  onClick={()=>setEditingFixedCol(editingFixedCol==='wysylki_label'?null:'wysylki_label')}
+                  title="Kliknij aby edytować nazwę">
+                  {editingFixedCol==='wysylki_label'?(
+                    <input value={colLabels.wysylki||'Wysyłki\nPL/EX'}
+                      onChange={e=>updateColLabel('wysylki',e.target.value)}
+                      onBlur={()=>setEditingFixedCol(null)}
+                      onKeyDown={e=>e.key==='Enter'&&setEditingFixedCol(null)}
+                      autoFocus onClick={e=>e.stopPropagation()}
+                      style={{...inputStyle,color:'#0f172a',background:'white',borderRadius:'0.25rem',padding:'0.125rem 0.25rem',width:'5rem'}}/>
+                  ):(
+                    <span style={{whiteSpace:'pre-line',lineHeight:1.3}}>
+                      {colLabels.wysylki||'Wysyłki\nPL/EX'}
+                      <span style={{opacity:0.5,fontSize:'0.5625rem',display:'block'}}>✎</span>
+                    </span>
+                  )}
+                </th>
+                {/* Nieterminowe — editable */}
+                <th style={{...thStyle,background:'#7f1d1d',minWidth:'4.5rem',cursor:'pointer',userSelect:'none'}}
+                  onClick={()=>setEditingFixedCol(editingFixedCol==='nieterminowe_label'?null:'nieterminowe_label')}
+                  title="Kliknij aby edytować nazwę">
+                  {editingFixedCol==='nieterminowe_label'?(
+                    <input value={colLabels.nieterminowe||'Nieterminowe\nwysyłki'}
+                      onChange={e=>updateColLabel('nieterminowe',e.target.value)}
+                      onBlur={()=>setEditingFixedCol(null)}
+                      onKeyDown={e=>e.key==='Enter'&&setEditingFixedCol(null)}
+                      autoFocus onClick={e=>e.stopPropagation()}
+                      style={{...inputStyle,color:'#0f172a',background:'white',borderRadius:'0.25rem',padding:'0.125rem 0.25rem',width:'5rem'}}/>
+                  ):(
+                    <span style={{whiteSpace:'pre-line',lineHeight:1.3}}>
+                      {colLabels.nieterminowe||'Nieterminowe\nwysyłki'}
+                      <span style={{opacity:0.5,fontSize:'0.5625rem',display:'block'}}>✎</span>
+                    </span>
+                  )}
+                </th>
+                {/* Poprawność wysyłek — wyliczana, zielone tło */}
+                <th style={{...thStyle,background:'#064e3b',minWidth:'5.5rem',cursor:'pointer',userSelect:'none'}}
+                  onClick={()=>setEditingFixedCol(editingFixedCol==='poprawnosc_wys'?null:'poprawnosc_wys')}
+                  title="Kliknij aby edytować nazwę">
+                  {editingFixedCol==='poprawnosc_wys'?(
+                    <input value={colLabels.poprawnosc_wys}
+                      onChange={e=>updateColLabel('poprawnosc_wys',e.target.value)}
+                      onBlur={()=>setEditingFixedCol(null)}
+                      onKeyDown={e=>e.key==='Enter'&&setEditingFixedCol(null)}
+                      autoFocus onClick={e=>e.stopPropagation()}
+                      style={{...inputStyle,color:'#0f172a',background:'white',borderRadius:'0.25rem',padding:'0.125rem 0.25rem',width:'5rem'}}/>
+                  ):(
+                    <span style={{whiteSpace:'pre-line',lineHeight:1.3}}>
+                      {colLabels.poprawnosc_wys}
+                      <span style={{opacity:0.5,fontSize:'0.5625rem',display:'block'}}>✎</span>
+                    </span>
+                  )}
+                </th>
+                {/* Błędy na Produkcję — dynamiczne z tablicy */}
+                <th style={{...thStyle,background:'#78350f',minWidth:'5rem',cursor:'pointer',userSelect:'none'}}
+                  onClick={()=>setEditingFixedCol(editingFixedCol==='bledy_prod'?null:'bledy_prod')}
+                  title="Kliknij aby edytować nazwę. Dane pobierane ze statystyk błędów.">
+                  {editingFixedCol==='bledy_prod'?(
+                    <input value={colLabels.bledy_prod}
+                      onChange={e=>updateColLabel('bledy_prod',e.target.value)}
+                      onBlur={()=>setEditingFixedCol(null)}
+                      onKeyDown={e=>e.key==='Enter'&&setEditingFixedCol(null)}
+                      autoFocus onClick={e=>e.stopPropagation()}
+                      style={{...inputStyle,color:'#0f172a',background:'white',borderRadius:'0.25rem',padding:'0.125rem 0.25rem',width:'5rem'}}/>
+                  ):(
+                    <span style={{whiteSpace:'pre-line',lineHeight:1.3}}>
+                      {colLabels.bledy_prod}
+                      <span style={{opacity:0.5,fontSize:'0.5625rem',display:'block'}}>✎ 📊live</span>
+                    </span>
+                  )}
+                </th>
+                {/* Błędy do klienta — dynamiczne z tablicy */}
+                <th style={{...thStyle,background:'#7f1d1d',minWidth:'5rem',cursor:'pointer',userSelect:'none'}}
+                  onClick={()=>setEditingFixedCol(editingFixedCol==='bledy_klient'?null:'bledy_klient')}
+                  title="Kliknij aby edytować nazwę. Dane pobierane ze statystyk błędów.">
+                  {editingFixedCol==='bledy_klient'?(
+                    <input value={colLabels.bledy_klient}
+                      onChange={e=>updateColLabel('bledy_klient',e.target.value)}
+                      onBlur={()=>setEditingFixedCol(null)}
+                      onKeyDown={e=>e.key==='Enter'&&setEditingFixedCol(null)}
+                      autoFocus onClick={e=>e.stopPropagation()}
+                      style={{...inputStyle,color:'#0f172a',background:'white',borderRadius:'0.25rem',padding:'0.125rem 0.25rem',width:'5rem'}}/>
+                  ):(
+                    <span style={{whiteSpace:'pre-line',lineHeight:1.3}}>
+                      {colLabels.bledy_klient}
+                      <span style={{opacity:0.5,fontSize:'0.5625rem',display:'block'}}>✎ 📊live</span>
+                    </span>
+                  )}
+                </th>
                 {/* Extra editable columns */}
                 {extraCols.map(c=>(
                   <th key={c.id} style={{...thStyle,minWidth:'5.625rem',position:'relative'}}>
@@ -1891,23 +2047,56 @@ function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, s
                           fontWeight: (getCell(row.key,'pomylki')||row.pomylki)>0?700:400}}
                         placeholder="0"/>
                     </td>
-                    {/* Poprawność — calculated: (pozycje − pomyłki) / pozycje × 100% */}
-                    <td style={{...tdStyle,fontWeight:700,
-                      background:'#f0fdf4',
-                      color:pctColor(pop)}}>
+                    {/* Poprawność wydań — calculated: (pozycje − pomyłki) / pozycje × 100% */}
+                    <td style={{...tdStyle,fontWeight:700,background:'#f0fdf4',color:pctColor(pop)}}>
                       {(() => {
-                        // Get effective values: edited cell takes priority over historical
                         const editedPoz = getCell(row.key,'wyd_poz');
                         const editedPom = getCell(row.key,'pomylki');
                         const pozVal = editedPoz !== '' ? editedPoz : row.wyd_poz;
                         const pomVal = editedPom !== '' ? editedPom : (row.pomylki ?? 0);
                         const poz = parseFloat(pozVal);
                         const pom = parseFloat(pomVal ?? 0);
-                        if (!poz || isNaN(poz)) return fPct(pop); // fallback to historical poprawnosc
+                        if (!poz || isNaN(poz)) return fPct(pop);
                         const calc = (poz - (isNaN(pom)?0:pom)) / poz;
                         return fPct(calc);
                       })()}
                     </td>
+                    {/* Wysyłki PL/EX — editable */}
+                    <td style={{...tdStyle}}>
+                      <input value={getCell(row.key,'wysylki')}
+                        onChange={e=>updateCell(row.key,'wysylki',e.target.value)}
+                        style={inputStyle} placeholder="—"/>
+                    </td>
+                    {/* Nieterminowe wysyłki — editable */}
+                    <td style={{...tdStyle}}>
+                      <input value={getCell(row.key,'nieterminowe')}
+                        onChange={e=>updateCell(row.key,'nieterminowe',e.target.value)}
+                        style={{...inputStyle,
+                          color:parseFloat(getCell(row.key,'nieterminowe'))>0?'#dc2626':'inherit',
+                          fontWeight:parseFloat(getCell(row.key,'nieterminowe'))>0?700:400}}
+                        placeholder="0"/>
+                    </td>
+                    {/* Poprawność wysyłek — calculated: (wysyłki − nieterminowe) / wysyłki × 100% */}
+                    <td style={{...tdStyle,fontWeight:700,background:'#f0fdf4',
+                      color:pctColor(calcPoprawnosc2(row))}}>
+                      {fPct(calcPoprawnosc2(row))}
+                    </td>
+                    {/* Błędy na Produkcję — live z tablicy */}
+                    {(()=>{
+                      const b=getBledyForMonth(summLine,row.year,row.month);
+                      return(
+                        <>
+                          <td style={{...tdStyle,fontWeight:700,background:'#fffbeb',
+                            color:b.bledy_prod>0?'#d97706':'#059669'}}>
+                            {b.bledy_prod}
+                          </td>
+                          <td style={{...tdStyle,fontWeight:700,background:'#fff1f2',
+                            color:b.bledy_klient>0?'#dc2626':'#059669'}}>
+                            {b.bledy_klient}
+                          </td>
+                        </>
+                      );
+                    })()}
                     {/* Extra columns */}
                     {extraCols.map(c=>(
                       <td key={c.id} style={{...tdStyle}}>
@@ -2019,8 +2208,35 @@ function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, s
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 function App(){
-  const [entries,setEntries]=useState(makeSeedEntries);
-  const [issues, setIssues] =useState([]);
+  // Auto-save entries and issues to localStorage
+  const [entries,setEntries]=useState(()=>{
+    try{
+      const s=localStorage.getItem('sqdp-entries');
+      return s ? JSON.parse(s) : makeSeedEntries();
+    }catch{return makeSeedEntries();}
+  });
+  const [issues, setIssues] =useState(()=>{
+    try{
+      const s=localStorage.getItem('sqdp-issues');
+      return s ? JSON.parse(s) : [];
+    }catch{return [];}
+  });
+
+  // Persist entries and issues whenever they change
+  const setEntriesPersist = useCallback((updater)=>{
+    setEntries(prev=>{
+      const next=typeof updater==='function'?updater(prev):updater;
+      try{localStorage.setItem('sqdp-entries',JSON.stringify(next));}catch{}
+      return next;
+    });
+  },[]);
+  const setIssuesPersist = useCallback((updater)=>{
+    setIssues(prev=>{
+      const next=typeof updater==='function'?updater(prev):updater;
+      try{localStorage.setItem('sqdp-issues',JSON.stringify(next));}catch{}
+      return next;
+    });
+  },[]);
   const [lines,  setLines]  =useState([{id:'l1',name:'Unisystem'},{id:'l2',name:'Riverdi'}]);
   const [view,   setView]   =useState('board');
   const [goals,  setGoals]  =useState({});
@@ -2057,14 +2273,12 @@ function App(){
   };
 
   const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
-    setEntries(prev=>{
+    setEntriesPersist(prev=>{
       const k=eKey(line,dateStr);
       const ex=prev[k]||{id:k,date:dateStr,line,
         S:null,Q:null,D:null,P:null,
         comments:{S:'',Q:'',D:'',P:''},
         locations:{S:'',Q:'',D:'',P:''}};
-
-      // Reset (4. kliknięcie): nextStatus===null → czyść wszystko dla tego dnia/litery
       if(nextStatus===null){
         return{...prev,[k]:{
           ...ex,
@@ -2073,10 +2287,7 @@ function App(){
           locations:{...ex.locations,[catKey]:''},
         }};
       }
-
       return{...prev,[k]:{...ex,
-        // Zawsze aktualizuj status z nextStatus (może być 'yellow', 'red', 'green')
-        // comment to tylko dodatkowe dane — nie wpływa na status
         [catKey]: nextStatus,
         comments:{...ex.comments,
           [catKey]:comment!==null?comment:
@@ -2085,16 +2296,16 @@ function App(){
           [catKey]:loc!=null?loc:ex.locations[catKey]},
       }};
     });
-  },[]);
+  },[setEntriesPersist]);
 
   const handleReset=useCallback((line,year,month)=>{
     const ms=`${year}-${String(month+1).padStart(2,'0')}`;
-    setEntries(prev=>{
+    setEntriesPersist(prev=>{
       const n={...prev};
       Object.keys(n).forEach(k=>{if(n[k].line===line&&n[k].date.startsWith(ms))delete n[k];});
       return n;
     });
-  },[]);
+  },[setEntriesPersist]);
 
   const [uiScale, setUiScale] = useState(1.0); // 1.0 = normal, 1.25 = large, 1.5 = XL
 
@@ -2141,7 +2352,7 @@ function App(){
       <div style={{height:0}}/>
       {view==='board'?(
         <MainBoard entries={entries} onToggle={handleToggle} onReset={handleReset}
-          issues={issues} setIssues={setIssues} lines={lines} setLines={setLines}
+          issues={issues} setIssues={setIssuesPersist} lines={lines} setLines={setLines}
           goals={goals} setGoals={setGoals}
           locations={locations} setLocations={setLocations}
           uiScale={uiScale}
@@ -2149,7 +2360,8 @@ function App(){
       ):(
         <Summary entries={entries} lines={lines} onBoard={()=>setView('board')}
           extraCols={extraCols} setExtraCols={setExtraColsPersist}
-          extraData={extraData} setExtraData={setExtraDataPersist}/>
+          extraData={extraData} setExtraData={setExtraDataPersist}
+          issues={issues} locations={locations}/>
       )}
       <style>{`
         *{box-sizing:border-box;} body{margin:0;}
