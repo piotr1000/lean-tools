@@ -1651,7 +1651,7 @@ function calcKpiFromEntries(line, year, month) {
     if (!filled.length) return null;
     return Math.round(filled.filter(e => e[k]==='green').length / filled.length * 10000) / 10000;
   };
-  
+
   const S=pct('S'), Q=pct('Q'), D=pct('D'), P=pct('P');
   // razem: średnia tylko z tych kategorii które mają dane
   const vals=[S,Q,D,P].filter(v=>v!==null);
@@ -2425,19 +2425,14 @@ function calcKpiFromEntries(line, year, month) {
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 function App(){
   // Auto-save entries and issues to localStorage
-  const [entries,setEntries]=useState(()=>{
-    try{
-      const s=localStorage.getItem('sqdp-entries');
-      return s ? JSON.parse(s) : makeSeedEntries();
-    }catch{return makeSeedEntries();}
-  });
+const [entries,setEntries]=useState({});
+
 const [issues, setIssues] = useState([]);
 
   // Persist entries and issues whenever they change
-  const setEntriesPersist = useCallback((updater)=>{
+const setEntriesPersist = useCallback((updater)=>{
     setEntries(prev=>{
       const next=typeof updater==='function'?updater(prev):updater;
-      try{localStorage.setItem('sqdp-entries',JSON.stringify(next));}catch{}
       return next;
     });
   },[]);
