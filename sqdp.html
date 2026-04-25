@@ -11,6 +11,22 @@
 </head>
 <body>
 <div id="root"></div>
+<script>
+// Wake Lock — ekran nie wygasa dopóki strona jest otwarta
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      const wakeLock = await navigator.wakeLock.request('screen');
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible') {
+          await navigator.wakeLock.request('screen');
+        }
+      });
+    }
+  } catch(e) {}
+}
+requestWakeLock();
+</script>
 <script type="text/babel" data-presets="react">
 const { useState, useCallback, useRef, useEffect } = React;
 
@@ -943,7 +959,7 @@ function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,o
       {/* Header — only "Problem" */}
       <div style={{background:cat.color,padding:'0.5rem 0.875rem',display:'flex',alignItems:'center',
         justifyContent:'space-between',flexShrink:0}}>
-        <span style={{color:'white',fontWeight:800,fontSize:'0.75rem',letterSpacing:1}}>PROBLEMY / DZIAŁANIA</span>
+        <span style={{color:'white',fontWeight:800,fontSize:'0.75rem',letterSpacing:1}}>PROBLEMY</span>
         <span style={{color:'rgba(255,255,255,0.85)',fontSize:'0.6875rem',fontWeight:700}}>PROBLEM</span>
       </div>
 
@@ -1552,6 +1568,9 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
         </span>
         <span style={{color:'#cbd5e1'}}>|</span>
         <span>Kliknij nagłówek S/Q/D/P → opis. Kliknij tekst problemu → edycja.</span>
+        <span style={{marginLeft:'auto',color:'rgba(100,116,139,0.6)',fontSize:'0.625rem',fontStyle:'italic'}}>
+          Designed by Piotr Mieczkowski
+        </span>
       </div>
 
       {/* MODALS */}
@@ -2110,6 +2129,79 @@ function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, s
                   </tr>
                 );
               })}
+              {/* ── WIERSZ SUMARYCZNY — wynik roczny ── */}
+              {(()=>{
+                const now = new Date();
+                const isYearEnd = now.getMonth()===11 && now.getDate()===31;
+                const TARGET_Q = 99.8, TARGET_D = 99.9;
+
+                // Zlicz sumę pozycji i pomyłek ze wszystkich miesięcy
+                let totalPoz=0,totalPom=0,countPoz=0;
+                let totalWys=0,totalNit=0,countWys=0;
+                allRows.forEach(row=>{
+                  const poz=parseFloat(getCell(row.key,'wyd_poz')||row.wyd_poz||0);
+                  const pom=parseFloat(getCell(row.key,'pomylki')||row.pomylki||0);
+                  if(poz>0){totalPoz+=poz;totalPom+=pom;countPoz++;}
+                  const wys=parseFloat(getCell(row.key,'wysylki')||0);
+                  const nit=parseFloat(getCell(row.key,'nieterminowe')||0);
+                  if(wys>0){totalWys+=wys;totalNit+=nit;countWys++;}
+                });
+                const resultQ = countPoz>0?(totalPoz-totalPom)/totalPoz*100:null;
+                const resultD = countWys>0?(totalWys-totalNit)/totalWys*100:null;
+
+                function getColor(result,target){
+                  if(result===null) return '#94a3b8';
+                  if(isYearEnd) return result>=target?'#059669':'#dc2626';
+                  return '#d97706';
+                }
+
+                // Count total columns: 2(rok,mies) + 4(SQDP) + 1(razem) + 3(wyd_poz,wyd_dok,pomylki)
+                // + 1(poprawnosc_wyd) + 2(wysylki,nieterminowe) + 1(poprawnosc_wys)
+                // + 2(bledy_prod,bledy_klient) + extraCols.length + 1(add col)
+                const fixedSpan = 2+4+1+3; // rok,mies,S,Q,D,P,razem,wyd_poz,wyd_dok,pomylki
+                return(
+                  <tr style={{background:'#0f172a'}}>
+                    <td colSpan={fixedSpan}
+                      style={{...tdStyle,background:'#0f172a',color:'white',
+                        fontWeight:800,fontSize:'0.75rem',textAlign:'right',
+                        padding:'0.625rem 0.875rem',letterSpacing:0.5}}>
+                      📊 WYNIK ROCZNY {now.getFullYear()}
+                    </td>
+                    {/* Poprawność wydań — roczna */}
+                    <td style={{...tdStyle,background:'#052e16',fontWeight:900,
+                      color:getColor(resultQ,TARGET_Q),fontSize:'0.875rem'}}>
+                      {resultQ!==null?`${resultQ.toFixed(2)}%`:'–'}
+                      <div style={{fontSize:'0.5625rem',color:'rgba(255,255,255,0.45)',fontWeight:400,marginTop:1}}>
+                        Cel: {TARGET_Q}%
+                      </div>
+                    </td>
+                    {/* Wysyłki, Nieterminowe — suma */}
+                    <td style={{...tdStyle,background:'#0f172a',color:'rgba(255,255,255,0.5)',fontSize:'0.75rem'}}>
+                      {totalWys>0?totalWys:'–'}
+                    </td>
+                    <td style={{...tdStyle,background:'#0f172a',color:totalNit>0?'#fca5a5':'rgba(255,255,255,0.5)',
+                      fontWeight:totalNit>0?700:400,fontSize:'0.75rem'}}>
+                      {totalWys>0?totalNit:'–'}
+                    </td>
+                    {/* Poprawność wysyłek — roczna */}
+                    <td style={{...tdStyle,background:'#052e16',fontWeight:900,
+                      color:getColor(resultD,TARGET_D),fontSize:'0.875rem'}}>
+                      {resultD!==null?`${resultD.toFixed(2)}%`:'–'}
+                      <div style={{fontSize:'0.5625rem',color:'rgba(255,255,255,0.45)',fontWeight:400,marginTop:1}}>
+                        Cel: {TARGET_D}%
+                      </div>
+                    </td>
+                    {/* Błędy — puste w summary row */}
+                    <td style={{...tdStyle,background:'#0f172a'}}/>
+                    <td style={{...tdStyle,background:'#0f172a'}}/>
+                    {/* Extra cols */}
+                    {extraCols.map(c=>(
+                      <td key={c.id} style={{...tdStyle,background:'#0f172a'}}/>
+                    ))}
+                    <td style={{...tdStyle,background:'#0f172a'}}/>
+                  </tr>
+                );
+              })()}
             </tbody>
           </table>
         </div>
@@ -2142,7 +2234,7 @@ function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, s
           <h3 style={{margin:'0 0 1.0rem',fontSize:'1.0rem',fontWeight:800,color:'#0f172a'}}>
             📐 Wzory i objaśnienia
           </h3>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1.0rem'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'1.0rem'}}>
             {/* Poprawność wydań */}
             <div style={{background:'#f0fdf4',borderRadius:'0.75rem',padding:16,border:'1px solid #bbf7d0'}}>
               <div style={{fontWeight:800,fontSize:'0.875rem',color:'#065f46',marginBottom:'0.5rem'}}>
@@ -2179,6 +2271,109 @@ function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, s
                 <span style={{color:'#dc2626',fontWeight:700}}>● Czerwony</span> &lt; 95,0%
               </div>
             </div>
+            {/* Cele roczne + wyniki dynamiczne */}
+            {(()=>{
+              const TARGET_QUALITY  = 99.8;
+              const TARGET_DELIVERY = 99.9;
+              const now = new Date();
+              const isYearEnd = now.getMonth()===11 && now.getDate()===31;
+
+              // Wylicz średnią Poprawność wydań ze wszystkich miesięcy z extraData
+              function calcYearlyAvg(field_poz, field_pom, field_wys, field_nit, mode){
+                // mode: 'wydania' | 'wysylki'
+                let totalPoz=0, totalPom=0, totalWys=0, totalNit=0, countWyd=0, countWys=0;
+                allRows.forEach(row=>{
+                  if(mode==='wydania'){
+                    const poz=parseFloat(getCell(row.key,field_poz)||row.wyd_poz||0);
+                    const pom=parseFloat(getCell(row.key,field_pom)||row.pomylki||0);
+                    if(poz>0){totalPoz+=poz;totalPom+=pom;countWyd++;}
+                  } else {
+                    const wys=parseFloat(getCell(row.key,field_wys)||0);
+                    const nit=parseFloat(getCell(row.key,field_nit)||0);
+                    if(wys>0){totalWys+=wys;totalNit+=nit;countWys++;}
+                  }
+                });
+                if(mode==='wydania') return countWyd>0?(totalPoz-totalPom)/totalPoz*100:null;
+                return countWys>0?(totalWys-totalNit)/totalWys*100:null;
+              }
+
+              const resultQ = calcYearlyAvg('wyd_poz','pomylki',null,null,'wydania');
+              const resultD = calcYearlyAvg(null,null,'wysylki','nieterminowe','wysylki');
+
+              function resultColor(result, target){
+                if(result===null) return '#94a3b8';
+                if(isYearEnd) return result>=target?'#059669':'#dc2626';
+                return '#d97706'; // w trakcie roku — pomarańczowy
+              }
+              function resultLabel(result, target){
+                if(result===null) return '–';
+                if(isYearEnd) return result>=target?'✅ Cel osiągnięty':'❌ Cel nieosiągnięty';
+                return '⏳ W trakcie roku';
+              }
+
+              return(
+                <div style={{background:'#fffbeb',borderRadius:'0.75rem',padding:16,
+                  border:'1px solid #fde68a',display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+                  <div style={{fontWeight:800,fontSize:'0.875rem',color:'#92400e'}}>
+                    🎯 Cele roczne {now.getFullYear()}
+                  </div>
+                  {/* Quality */}
+                  <div style={{background:'white',borderRadius:'0.625rem',padding:'0.75rem 1.0rem',
+                    border:'1px solid #d1fae5'}}>
+                    <div style={{fontSize:'0.6875rem',color:'#64748b',fontWeight:600,
+                      textTransform:'uppercase',letterSpacing:0.5,marginBottom:'0.25rem'}}>
+                      Poprawność wydań (Quality)
+                    </div>
+                    <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'0.5rem'}}>
+                      <span style={{fontSize:'0.75rem',color:'#64748b'}}>Cel: <strong>{TARGET_QUALITY}%</strong></span>
+                      <span style={{fontSize:'1.125rem',fontWeight:900,
+                        color:resultColor(resultQ,TARGET_QUALITY)}}>
+                        {resultQ!==null?`${resultQ.toFixed(2)}%`:'–'}
+                      </span>
+                    </div>
+                    <div style={{fontSize:'0.6875rem',fontWeight:700,marginTop:'0.25rem',
+                      color:resultColor(resultQ,TARGET_QUALITY)}}>
+                      {resultLabel(resultQ,TARGET_QUALITY)}
+                    </div>
+                    <div style={{marginTop:'0.375rem',height:4,background:'#f1f5f9',borderRadius:2,overflow:'hidden'}}>
+                      {resultQ!==null&&<div style={{height:'100%',borderRadius:2,
+                        background:resultColor(resultQ,TARGET_QUALITY),
+                        width:`${Math.min(resultQ/TARGET_QUALITY*100,100)}%`}}/>}
+                    </div>
+                  </div>
+                  {/* Delivery */}
+                  <div style={{background:'white',borderRadius:'0.625rem',padding:'0.75rem 1.0rem',
+                    border:'1px solid #dbeafe'}}>
+                    <div style={{fontSize:'0.6875rem',color:'#64748b',fontWeight:600,
+                      textTransform:'uppercase',letterSpacing:0.5,marginBottom:'0.25rem'}}>
+                      Poprawność wysyłek (Delivery)
+                    </div>
+                    <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'0.5rem'}}>
+                      <span style={{fontSize:'0.75rem',color:'#64748b'}}>Cel: <strong>{TARGET_DELIVERY}%</strong></span>
+                      <span style={{fontSize:'1.125rem',fontWeight:900,
+                        color:resultColor(resultD,TARGET_DELIVERY)}}>
+                        {resultD!==null?`${resultD.toFixed(2)}%`:'–'}
+                      </span>
+                    </div>
+                    <div style={{fontSize:'0.6875rem',fontWeight:700,marginTop:'0.25rem',
+                      color:resultColor(resultD,TARGET_DELIVERY)}}>
+                      {resultLabel(resultD,TARGET_DELIVERY)}
+                    </div>
+                    <div style={{marginTop:'0.375rem',height:4,background:'#f1f5f9',borderRadius:2,overflow:'hidden'}}>
+                      {resultD!==null&&<div style={{height:'100%',borderRadius:2,
+                        background:resultColor(resultD,TARGET_DELIVERY),
+                        width:`${Math.min(resultD/TARGET_DELIVERY*100,100)}%`}}/>}
+                    </div>
+                  </div>
+                  <div style={{fontSize:'0.625rem',color:'#92400e',lineHeight:1.5}}>
+                    ⏳ Pomarańczowy = w trakcie roku<br/>
+                    ✅ Zielony = cel osiągnięty (31 XII)<br/>
+                    ❌ Czerwony = cel nieosiągnięty (31 XII)<br/>
+                    Wynik liczony jako średnia ważona wszystkich miesięcy.
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           {/* Column legend */}
           <div style={{marginTop:'1.0rem',padding:'0.75rem 1.0rem',background:'#f8fafc',
