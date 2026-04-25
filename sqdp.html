@@ -2600,14 +2600,29 @@ const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
   }
 },[setEntriesPersist, lines]);
 
-  const handleReset=useCallback((line,year,month)=>{
-    const ms=`${year}-${String(month+1).padStart(2,'0')}`;
-    setEntriesPersist(prev=>{
-      const n={...prev};
-      Object.keys(n).forEach(k=>{if(n[k].line===line&&n[k].date.startsWith(ms))delete n[k];});
-      return n;
-    });
-  },[setEntriesPersist]);
+const handleReset=useCallback((line,year,month)=>{
+  const ms=`${year}-${String(month+1).padStart(2,'0')}`;
+  // 1. Wyczyść lokalny stan i localStorage
+  setEntriesPersist(prev=>{
+    const n={...prev};
+    Object.keys(n).forEach(k=>{if(n[k].line===line&&n[k].date.startsWith(ms))delete n[k];});
+    return n;
+  });
+  
+  // 2. Usuń z Supabase — bez tego dane wracają po odświeżeniu strony
+  const lineObj=lines.find(l=>l.name===line);
+  if(lineObj){
+    const lastDay=new Date(year,month+1,0).getDate();
+    db.from('sqdp_entries').delete()
+      .eq('line_id',lineObj.id)
+      .gte('date',`${ms}-01`)
+      .lte('date',`${ms}-${String(lastDay).padStart(2,'0')}`)
+      .then(({error})=>{
+        if(error) console.error('Błąd czyszczenia miesiąca w Supabase:',error.message);
+        else console.log(`✅ Wyczyszczono ${line} ${ms} w Supabase`);
+      });
+  }
+},[setEntriesPersist, lines]);
 
   const [uiScale, setUiScale] = useState(1.0); // 1.0 = normal, 1.25 = large, 1.5 = XL
 
