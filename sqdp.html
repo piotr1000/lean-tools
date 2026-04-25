@@ -7,6 +7,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://hyisabnvzrdplnucwfeh.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_SXzGVMnJ8cJE-pmcGLgyTg_iL6PI66h';
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // Test połączenia — sprawdza czy widzi linie produkcyjne
+  db.from('sqdp_lines').select('name').then(({ data, error }) => {
+    if (error) console.error('Supabase błąd:', error.message);
+    else console.log('Supabase połączony ✅ Linie:', data.map(d => d.name));
+  });
+</script>
 <style>* { box-sizing: border-box; } body { margin: 0; padding: 0; }</style>
 </head>
 <body>
@@ -2410,12 +2422,7 @@ function App(){
       return s ? JSON.parse(s) : makeSeedEntries();
     }catch{return makeSeedEntries();}
   });
-  const [issues, setIssues] =useState(()=>{
-    try{
-      const s=localStorage.getItem('sqdp-issues');
-      return s ? JSON.parse(s) : [];
-    }catch{return [];}
-  });
+const [issues, setIssues] = useState([]);
 
   // Persist entries and issues whenever they change
   const setEntriesPersist = useCallback((updater)=>{
@@ -2425,14 +2432,92 @@ function App(){
       return next;
     });
   },[]);
-  const setIssuesPersist = useCallback((updater)=>{
+
+ const [lines, setLines] = useState([]);
+
+const setIssuesPersist = useCallback((updater)=>{
     setIssues(prev=>{
       const next=typeof updater==='function'?updater(prev):updater;
-      try{localStorage.setItem('sqdp-issues',JSON.stringify(next));}catch{}
+      // Sync do Supabase — znajdź nowe/zmienione issue
+      const ORG='00000000-0000-0000-0000-000000000001';
+      const prevIds=new Set(prev.map(i=>i.id));
+      next.forEach(issue=>{
+        if(!prevIds.has(issue.id)){
+          // Nowe issue — insert
+          const lineObj=lines.find(l=>l.name===issue.line||l.id===issue.line_id);
+          db.from('sqdp_issues').insert({
+            organization_id: ORG,
+            line_id: lineObj?.id || issue.line_id,
+            area: issue.area,
+            title: issue.title,
+            status: issue.status||'open',
+          }).then(({error})=>{ if(error) console.error('Błąd dodawania issue:', error.message); });
+        } else {
+          // Istniejące — update statusu
+          const old=prev.find(i=>i.id===issue.id);
+          if(old && old.status!==issue.status){
+            db.from('sqdp_issues').update({status: issue.status, updated_at: new Date().toISOString()})
+              .eq('id', issue.id)
+              .then(({error})=>{ if(error) console.error('Błąd aktualizacji issue:', error.message); });
+          }
+        }
+      });
+      // Usunięte issue
+      const nextIds=new Set(next.map(i=>i.id));
+      prev.forEach(issue=>{
+        if(!nextIds.has(issue.id)){
+          db.from('sqdp_issues').delete().eq('id', issue.id)
+            .then(({error})=>{ if(error) console.error('Błąd usuwania issue:', error.message); });
+        }
+      });
       return next;
     });
-  },[]);
-  const [lines,  setLines]  =useState([{id:'l1',name:'Unisystem'},{id:'l2',name:'Riverdi'}]);
+  },[lines]);
+
+useEffect(()=>{
+  db.from('sqdp_lines').select('id, name').order('name').then(({data, error})=>{
+    if(error){ console.error('Błąd ładowania linii:', error.message); return; }
+    if(data && data.length > 0) setLines(data);
+  });
+  // Ładuj Issues
+  db.from('sqdp_issues').select('*').order('created_at', {ascending:false})
+    .then(({data:iData, error:iError})=>{
+      if(iError){ console.error('Błąd ładowania issues:', iError.message); return; }
+      if(iData && iData.length > 0) setIssues(iData);
+    });
+},[]);
+
+  useEffect(()=>{
+  if(lines.length === 0) return;
+  const now = new Date();
+const year = now.getFullYear();
+const month = now.getMonth();
+const monthStr = `${year}-${String(month+1).padStart(2,'0')}`;
+const lastDay = new Date(year, month+1, 0).getDate();
+db.from('sqdp_entries')
+  .select('line_id, date, category, status, comment')
+  .gte('date', `${monthStr}-01`)
+  .lte('date', `${monthStr}-${lastDay}`)
+    .then(({data, error})=>{
+      if(error){ console.error('Błąd ładowania wpisów:', error.message); return; }
+      if(!data || data.length === 0) return;
+      setEntries(prev=>{
+        const next={...prev};
+        data.forEach(row=>{
+          const lineObj=lines.find(l=>l.id===row.line_id);
+          if(!lineObj) return;
+          const k=eKey(lineObj.name, row.date);
+          if(!next[k]) next[k]={id:k,date:row.date,line:lineObj.name,
+            S:null,Q:null,D:null,P:null,
+            comments:{S:'',Q:'',D:'',P:''},
+            locations:{S:'',Q:'',D:'',P:''}};
+          next[k][row.category]=row.status;
+          next[k].comments[row.category]=row.comment||'';
+        });
+        return next;
+      });
+    });
+},[lines]);
   const [view,   setView]   =useState('board');
   const [goals,  setGoals]  =useState({});
   const [locations, setLocations] = useState(DEFAULT_LOCATIONS);
@@ -2467,31 +2552,52 @@ function App(){
     });
   };
 
-  const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
-    setEntriesPersist(prev=>{
-      const k=eKey(line,dateStr);
-      const ex=prev[k]||{id:k,date:dateStr,line,
-        S:null,Q:null,D:null,P:null,
-        comments:{S:'',Q:'',D:'',P:''},
-        locations:{S:'',Q:'',D:'',P:''}};
-      if(nextStatus===null){
-        return{...prev,[k]:{
-          ...ex,
-          [catKey]: null,
-          comments:{...ex.comments,[catKey]:''},
-          locations:{...ex.locations,[catKey]:''},
-        }};
-      }
-      return{...prev,[k]:{...ex,
-        [catKey]: nextStatus,
-        comments:{...ex.comments,
-          [catKey]:comment!==null?comment:
-            nextStatus==='green'?'':ex.comments[catKey]},
-        locations:{...ex.locations,
-          [catKey]:loc!=null?loc:ex.locations[catKey]},
+const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
+  setEntriesPersist(prev=>{
+    const k=eKey(line,dateStr);
+    const ex=prev[k]||{id:k,date:dateStr,line,
+      S:null,Q:null,D:null,P:null,
+      comments:{S:'',Q:'',D:'',P:''},
+      locations:{S:'',Q:'',D:'',P:''}};
+    if(nextStatus===null){
+      return{...prev,[k]:{
+        ...ex,
+        [catKey]: null,
+        comments:{...ex.comments,[catKey]:''},
+        locations:{...ex.locations,[catKey]:''},
       }};
-    });
-  },[setEntriesPersist]);
+    }
+    return{...prev,[k]:{...ex,
+      [catKey]: nextStatus,
+      comments:{...ex.comments,
+        [catKey]:comment!==null?comment:
+          nextStatus==='green'?'':ex.comments[catKey]},
+      locations:{...ex.locations,
+        [catKey]:loc!=null?loc:ex.locations[catKey]},
+    }};
+  });
+  // Zapis do Supabase
+  const lineObj=lines.find(l=>l.name===line);
+  if(lineObj){
+    const ORG='00000000-0000-0000-0000-000000000001';
+    if(nextStatus===null){
+      db.from('sqdp_entries').delete()
+        .eq('line_id',lineObj.id).eq('date',dateStr).eq('category',catKey)
+        .then(({error})=>{ if(error) console.error('Błąd usuwania:',error.message); });
+    } else {
+      db.from('sqdp_entries').upsert({
+        organization_id:ORG,
+        line_id:lineObj.id,
+        date:dateStr,
+        category:catKey,
+        status:nextStatus,
+        comment:comment||'',
+        updated_at:new Date().toISOString(),
+      },{onConflict:'line_id,date,category'})
+        .then(({error})=>{ if(error) console.error('Błąd zapisu:',error.message); });
+    }
+  }
+},[setEntriesPersist, lines]);
 
   const handleReset=useCallback((line,year,month)=>{
     const ms=`${year}-${String(month+1).padStart(2,'0')}`;
