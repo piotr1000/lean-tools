@@ -926,7 +926,8 @@ function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,o
     };
   }
 
-  const rows=issues.filter(i=>i.line===line&&i.area===cat.key);
+  const monthStr=`${year}-${String(month+1).padStart(2,'0')}`;
+const rows=issues.filter(i=>i.line===line&&i.area===cat.key&&(i.date||i.created_at||'').startsWith(monthStr));
 
   function startEdit(i){setEditId(i.id);setEditTitle(i.title);}
   function saveEdit(i){setIssues(prev=>prev.map(x=>x.id===i.id?{...x,title:editTitle}:x));setEditId(null);}
