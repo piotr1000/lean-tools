@@ -2488,25 +2488,31 @@ useEffect(()=>{
     });
 },[]);
 
-  useEffect(()=>{
+useEffect(()=>{
   if(lines.length === 0) return;
   const now = new Date();
-const year = now.getFullYear();
-const month = now.getMonth();
-const monthStr = `${year}-${String(month+1).padStart(2,'0')}`;
-const lastDay = new Date(year, month+1, 0).getDate();
-db.from('sqdp_entries')
-  .select('line_id, date, category, status, comment')
-  .gte('date', `${monthStr}-01`)
-  .lte('date', `${monthStr}-${lastDay}`)
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const monthStr = `${year}-${String(month+1).padStart(2,'0')}`;
+  const lastDay = new Date(year, month+1, 0).getDate();
+  db.from('sqdp_entries')
+    .select('line_id, date, category, status, comment')
+    .gte('date', `${monthStr}-01`)
+    .lte('date', `${monthStr}-${lastDay}`)
     .then(({data, error})=>{
       if(error){ console.error('Błąd ładowania wpisów:', error.message); return; }
       if(!data || data.length === 0) return;
+      // Odczytaj listę wyczyszczonych miesięcy
+      let cleared=[];
+      try{ cleared=JSON.parse(localStorage.getItem('sqdp-cleared')||'[]'); }catch{}
       setEntries(prev=>{
         const next={...prev};
         data.forEach(row=>{
           const lineObj=lines.find(l=>l.id===row.line_id);
           if(!lineObj) return;
+          // Pomiń dane dla miesięcy wyczyszczonych przez użytkownika
+          const ck=`${lineObj.name}-${row.date.substring(0,7)}`;
+          if(cleared.includes(ck)) return;
           const k=eKey(lineObj.name, row.date);
           if(!next[k]) next[k]={id:k,date:row.date,line:lineObj.name,
             S:null,Q:null,D:null,P:null,
@@ -2519,6 +2525,7 @@ db.from('sqdp_entries')
       });
     });
 },[lines]);
+
   const [view,   setView]   =useState('board');
   const [goals,  setGoals]  =useState({});
   const [locations, setLocations] = useState(DEFAULT_LOCATIONS);
@@ -2554,6 +2561,16 @@ db.from('sqdp_entries')
   };
 
 const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
+// Jeśli użytkownik wpisuje dane do wyczyszczonego miesiąca — usuń blokadę
+if(nextStatus !== null){
+  const ck=`${line}-${dateStr.substring(0,7)}`;
+  try{
+    const cl=JSON.parse(localStorage.getItem('sqdp-cleared')||'[]');
+    if(cl.includes(ck))
+      localStorage.setItem('sqdp-cleared',JSON.stringify(cl.filter(x=>x!==ck)));
+  }catch{}
+}
+
   setEntriesPersist(prev=>{
     const k=eKey(line,dateStr);
     const ex=prev[k]||{id:k,date:dateStr,line,
@@ -2608,8 +2625,14 @@ const handleReset=useCallback((line,year,month)=>{
     Object.keys(n).forEach(k=>{if(n[k].line===line&&n[k].date.startsWith(ms))delete n[k];});
     return n;
   });
-  
-  // 2. Usuń z Supabase — bez tego dane wracają po odświeżeniu strony
+  // 2. Zaznacz miesiąc jako wyczyszczony — to blokuje ponowne ładowanie z Supabase
+  const ck=`${line}-${ms}`;
+  try{
+    const cl=JSON.parse(localStorage.getItem('sqdp-cleared')||'[]');
+    if(!cl.includes(ck)) cl.push(ck);
+    localStorage.setItem('sqdp-cleared',JSON.stringify(cl));
+  }catch{}
+  // 3. Usuń z Supabase (best-effort)
   const lineObj=lines.find(l=>l.name===line);
   if(lineObj){
     const lastDay=new Date(year,month+1,0).getDate();
