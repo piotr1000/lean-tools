@@ -1640,16 +1640,24 @@ function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, s
   });
 
   // Merge historical rows with live rows
-  function calcKpiFromEntries(line, year, month) {
-    const ms = `${year}-${String(month+1).padStart(2,'0')}`;
-    const list = Object.values(entries).filter(e => e.date.startsWith(ms) && e.line === line);
-    if (!list.length) return null;
-    const n = list.length;
-    const pct = k => Math.round(list.filter(e => e[k]==='green').length / n * 10000) / 10000;
-    const S=pct('S'), Q=pct('Q'), D=pct('D'), P=pct('P');
-    const razem = Math.round((S+Q+D+P)/4*10000)/10000;
-    return {S,Q,D,P,razem};
-  }
+function calcKpiFromEntries(line, year, month) {
+  const ms = `${year}-${String(month+1).padStart(2,'0')}`;
+  const list = Object.values(entries).filter(e => e.date.startsWith(ms) && e.line === line);
+  if (!list.length) return null;
+  // Liczymy tylko dni z jawnym zaznaczeniem (green/yellow/red)
+  // Szare (null) = święto lub dzień wolny = nie wchodzi do mianownika
+  const pct = k => {
+    const filled = list.filter(e => e[k] !== null);
+    if (!filled.length) return null;
+    return Math.round(filled.filter(e => e[k]==='green').length / filled.length * 10000) / 10000;
+  };
+  
+  const S=pct('S'), Q=pct('Q'), D=pct('D'), P=pct('P');
+  // razem: średnia tylko z tych kategorii które mają dane
+  const vals=[S,Q,D,P].filter(v=>v!==null);
+  const razem = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10000)/10000 : null;
+  return {S,Q,D,P,razem};
+}
 
   // All rows: historical + any live months not in history
   const allRows = (() => {
