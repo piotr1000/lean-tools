@@ -1623,7 +1623,7 @@ const HIST_UNISYSTEM = (() => {
 })();
 
 // ─── SUMMARY SCREEN ───────────────────────────────────────────────────────────
-function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, setExtraData, issues, locations}) {
+function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, setExtraData, issues, locations, onSaveCell}) {
   const now = new Date();
   const [summLine, setSummLine] = useState(lines[0]?.name || 'Unisystem');
   const [editingCol, setEditingCol] = useState(null);
@@ -1715,6 +1715,7 @@ function calcKpiFromEntries(line, year, month) {
 
   function updateCell(rowKey, field, val) {
     setExtraData(prev => ({...prev, [`${summLine}-${rowKey}-${field}`]: val}));
+    if (onSaveCell) onSaveCell(summLine, rowKey, field, val);
   }
   function getCell(rowKey, field) {
     return extraData[`${summLine}-${rowKey}-${field}`] ?? '';
@@ -2540,6 +2541,34 @@ useEffect(()=>{
     });
 },[lines]);
 
+// Ładuj dane Podsumowania z Supabase
+useEffect(()=>{
+  if(lines.length === 0) return;
+  // Kolumny
+  db.from('sqdp_summary_cols').select('*').order('sort_order').then(({data, error})=>{
+    if(error){ console.error('Błąd ładowania summary cols:', error.message); return; }
+    if(data && data.length > 0){
+      const cols = data.map(c => ({id: c.id, label: c.label}));
+      setExtraCols(cols);
+      try{ localStorage.setItem('sqdp-extra-cols', JSON.stringify(cols)); }catch{}
+    }
+  });
+  // Dane komórek
+  db.from('sqdp_summary').select('*').then(({data, error})=>{
+    if(error){ console.error('Błąd ładowania summary data:', error.message); return; }
+    if(data && data.length > 0){
+      const fromDB = {};
+      data.forEach(row=>{
+        const lineObj = lines.find(l => l.id === row.line_id);
+        if(!lineObj) return;
+        fromDB[`${lineObj.name}-${row.year_month}-${row.field}`] = row.value ?? '';
+      });
+      setExtraData(fromDB);
+      try{ localStorage.setItem('sqdp-extra-data', JSON.stringify(fromDB)); }catch{}
+    }
+  });
+},[lines]);
+
   const [view,   setView]   =useState('board');
   const [goals,  setGoals]  =useState({});
   const [locations, setLocations] = useState(DEFAULT_LOCATIONS);
@@ -2559,20 +2588,59 @@ useEffect(()=>{
   });
 
   // Auto-save extraCols and extraData to localStorage whenever they change
-  const setExtraColsPersist = (updater)=>{
-    setExtraCols(prev=>{
-      const next=typeof updater==='function'?updater(prev):updater;
-      try{localStorage.setItem('sqdp-extra-cols',JSON.stringify(next));}catch{}
+// Auto-save extraCols and extraData to localStorage + Supabase
+  const ORG = '00000000-0000-0000-0000-000000000001';
+
+  const setExtraColsPersist = (updater) => {
+    setExtraCols(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try { localStorage.setItem('sqdp-extra-cols', JSON.stringify(next)); } catch {}
+      // Upsert wszystkich kolumn
+      const nextIds = new Set(next.map(c => c.id));
+      if (next.length > 0) {
+        db.from('sqdp_summary_cols').upsert(
+          next.map((c, i) => ({id: c.id, organization_id: ORG, label: c.label, sort_order: i, updated_at: new Date().toISOString()})),
+          {onConflict: 'id'}
+        ).then(({error}) => { if (error) console.error('Błąd sync cols:', error.message); });
+      }
+      // Usuń skasowane kolumny
+      prev.forEach(c => {
+        if (!nextIds.has(c.id))
+          db.from('sqdp_summary_cols').delete().eq('id', c.id)
+            .then(({error}) => { if (error) console.error('Błąd usuwania col:', error.message); });
+      });
       return next;
     });
   };
-  const setExtraDataPersist = (updater)=>{
-    setExtraData(prev=>{
-      const next=typeof updater==='function'?updater(prev):updater;
-      try{localStorage.setItem('sqdp-extra-data',JSON.stringify(next));}catch{}
+
+  const setExtraDataPersist = (updater) => {
+    setExtraData(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try { localStorage.setItem('sqdp-extra-data', JSON.stringify(next)); } catch {}
       return next;
     });
   };
+
+  // Zapis pojedynczej komórki Podsumowania do Supabase
+  const saveSummaryCell = useCallback((lineName, rowKey, field, value) => {
+    const lineObj = lines.find(l => l.name === lineName);
+    if (!lineObj) return;
+    if (value === '' || value === null || value === undefined) {
+      db.from('sqdp_summary').delete()
+        .eq('line_id', lineObj.id).eq('year_month', rowKey).eq('field', field)
+        .then(({error}) => { if (error) console.error('Błąd usuwania summary cell:', error.message); });
+    } else {
+      db.from('sqdp_summary').upsert({
+        organization_id: ORG,
+        line_id: lineObj.id,
+        year_month: rowKey,
+        field,
+        value: String(value),
+        updated_at: new Date().toISOString(),
+      }, {onConflict: 'line_id,year_month,field'})
+        .then(({error}) => { if (error) console.error('Błąd zapisu summary cell:', error.message); });
+    }
+  }, [lines]);
 
 const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
 // Jeśli użytkownik wpisuje dane do wyczyszczonego miesiąca — usuń blokadę
@@ -2715,7 +2783,8 @@ const handleReset=useCallback((line,year,month)=>{
         <Summary entries={entries} lines={lines} onBoard={()=>setView('board')}
           extraCols={extraCols} setExtraCols={setExtraColsPersist}
           extraData={extraData} setExtraData={setExtraDataPersist}
-          issues={issues} locations={locations}/>
+          issues={issues} locations={locations}
+          onSaveCell={saveSummaryCell}/>
       )}
       <style>{`
         *{box-sizing:border-box;} body{margin:0;}
