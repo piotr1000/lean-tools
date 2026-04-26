@@ -1774,15 +1774,9 @@ function calcKpiFromEntries(line, year, month) {
   }
 
   // Pobierz błędy z issues dla danej linii i miesiąca
-  function getBledyForMonth(lineName, year, month){
+function getBledyForMonth(lineName, year, month){
     const ms=`${year}-${String(month+1).padStart(2,'0')}`;
-    const allLocs = locations||DEFAULT_LOCATIONS;
-  // Dla Safety pokazuj tylko lokalizacje wypadkowe; dla Q/D/P tylko produkcyjne/klienckie
-  const SAFETY_TYPES  = ['accident','near_miss','other'];
-  const DEFAULT_TYPES = ['prod','client','other'];
-  const locs = allLocs.filter(l =>
-    catKey==='S' ? SAFETY_TYPES.includes(l.type) : DEFAULT_TYPES.includes(l.type)
-  );
+    const locs = locations||DEFAULT_LOCATIONS;
     const monthIssues = (issues||[])
       .filter(i=>i.line===lineName && i.date && i.date.startsWith(ms));
     const bledy_prod = monthIssues.filter(i=>{
@@ -2828,7 +2822,6 @@ const handleReset=useCallback((line,year,month)=>{
           issues={issues} setIssues={setIssuesPersist} onDeleteIssue={deleteIssuePersist} lines={lines} setLines={setLines}
           goals={goals} setGoals={setGoals}
           locations={locations} setLocations={setLocations}
-          uiScale={uiScale}
           onSummary={()=>setView('summary')}/>
       ):(
         <Summary entries={entries} lines={lines} onBoard={()=>setView('board')}
