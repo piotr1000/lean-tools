@@ -2791,7 +2791,36 @@ const handleReset=useCallback((line,year,month)=>{
         /* clamp = naturalne skalowanie; przełącznik nadpisuje przez inline style */
         fontSize: uiScale !== 1.0 ? `${uiScale * 14}px` : undefined,
       }}>
-
+      {/* Scale selector bar */}
+      <div style={{background:'#020617',padding:'3px 16px',display:'flex',
+        alignItems:'center',justifyContent:'flex-end',gap:6,flexShrink:0,
+        borderBottom:'1px solid rgba(255,255,255,0.06)'}}>
+        <span style={{color:'rgba(255,255,255,0.28)',fontSize:10,marginRight:4}}>
+          🖥 Rozmiar:
+        </span>
+        {[
+          {val:0.85, label:'S', desc:'Mały — laptopy 13-15"'},
+          {val:1.0,  label:'M', desc:'Auto — clamp() skaluje naturalnie (domyślny)'},
+          {val:1.2,  label:'L', desc:'Duży — monitory 32-40"'},
+          {val:1.45, label:'XL',desc:'Bardzo duży — ekrany 50"+ / hale produkcyjne'},
+        ].map(opt=>(
+          <button key={opt.val} onClick={()=>setUiScale(opt.val)}
+            title={opt.desc}
+            style={{
+              background: uiScale===opt.val ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.04)',
+              border: uiScale===opt.val ? '1px solid rgba(99,102,241,0.7)' : '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 5,
+              color: uiScale===opt.val ? '#a5b4fc' : 'rgba(255,255,255,0.3)',
+              fontSize: 10, fontWeight: uiScale===opt.val ? 800 : 400,
+              padding: '2px 9px', cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+            {opt.label}
+          </button>
+        ))}
+        <span style={{color:'rgba(255,255,255,0.12)',fontSize:10,marginLeft:6}}>
+          Ctrl+scroll = zoom
+        </span>
+      </div>
       {/* Global nav placeholder */}
       <div style={{height:0}}/>
       {view==='board'?(
