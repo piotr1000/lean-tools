@@ -2481,14 +2481,27 @@ const setIssuesPersist = useCallback((updater)=>{
 useEffect(()=>{
   db.from('sqdp_lines').select('id, name').order('name').then(({data, error})=>{
     if(error){ console.error('Błąd ładowania linii:', error.message); return; }
-    if(data && data.length > 0) setLines(data);
+    if(data && data.length > 0){
+      setLines(data);
+      // Ładuj Issues po załadowaniu linii
+      db.from('sqdp_issues').select('*').order('created_at', {ascending:false})
+        .then(({data:iData, error:iError})=>{
+          if(iError){ console.error('Błąd ładowania issues:', iError.message); return; }
+          if(iData && iData.length > 0){
+            // Mapuj line_id → line name
+            const mapped = iData.map(issue=>{
+              const lineObj = data.find(l=>l.id===issue.line_id);
+              return {
+                ...issue,
+                line: lineObj?.name || '',
+                date: issue.created_at?.split('T')[0] || '',
+              };
+            });
+            setIssues(mapped);
+          }
+        });
+    }
   });
-  // Ładuj Issues
-  db.from('sqdp_issues').select('*').order('created_at', {ascending:false})
-    .then(({data:iData, error:iError})=>{
-      if(iError){ console.error('Błąd ładowania issues:', iError.message); return; }
-      if(iData && iData.length > 0) setIssues(iData);
-    });
 },[]);
 
 useEffect(()=>{
