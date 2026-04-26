@@ -2493,15 +2493,10 @@ useEffect(()=>{
 
 useEffect(()=>{
   if(lines.length === 0) return;
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const monthStr = `${year}-${String(month+1).padStart(2,'0')}`;
-  const lastDay = new Date(year, month+1, 0).getDate();
   db.from('sqdp_entries')
-    .select('line_id, date, category, status, comment')
-    .gte('date', `${monthStr}-01`)
-    .lte('date', `${monthStr}-${lastDay}`)
+  .select('line_id, date, category, status, comment')
+  .gte('date', '2026-01-01')
+  .lte('date', '2026-12-31')
     .then(({data, error})=>{
       if(error){ console.error('Błąd ładowania wpisów:', error.message); return; }
       if(!data || data.length === 0) return;
