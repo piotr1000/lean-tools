@@ -907,7 +907,7 @@ function GoalSection({ cat, currentPct, goalVal, onSetGoal }) {
 }
 
 // ─── PROBLEM TABLE (only "Problem" column) ────────────────────────────────────
-function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,onSetGoal,locations}){
+function ProblemTable({cat,line,issues,setIssues,onDeleteIssue,year,month,currentPct,goalVal,onSetGoal,locations}){
   const [editId,setEditId]=useState(null);
   const [editTitle,setEditTitle]=useState('');
 
@@ -930,8 +930,14 @@ function ProblemTable({cat,line,issues,setIssues,year,month,currentPct,goalVal,o
 const rows=issues.filter(i=>i.line===line&&i.area===cat.key&&(i.date||i.created_at||'').startsWith(monthStr));
 
   function startEdit(i){setEditId(i.id);setEditTitle(i.title);}
-  function saveEdit(i){setIssues(prev=>prev.map(x=>x.id===i.id?{...x,title:editTitle}:x));setEditId(null);}
-  function del(id){setIssues(prev=>prev.filter(x=>x.id!==id));}
+  function saveEdit(i){
+  setIssues(prev=>prev.map(x=>x.id===i.id?{...x,title:editTitle}:x));
+  db.from('sqdp_issues').update({title: editTitle, updated_at: new Date().toISOString()})
+    .eq('id', i.id)
+    .then(({error})=>{ if(error) console.error('Błąd zapisu tytułu:', error.message); });
+  setEditId(null);
+}
+  function del(id){ if(onDeleteIssue) onDeleteIssue(id); else setIssues(prev=>prev.filter(x=>x.id!==id)); }
   function cycle(id){
     setIssues(prev=>prev.map(x=>{
       if(x.id!==id) return x;
@@ -1125,7 +1131,7 @@ const rows=issues.filter(i=>i.line===line&&i.area===cat.key&&(i.date||i.created_
 }
 
 // ─── SQDP COLUMN ─────────────────────────────────────────────────────────────
-function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onToggle,onCatClick,goals,setGoals,locations}){
+function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onDeleteIssue,onToggle,onCatClick,goals,setGoals,locations}){
   const ms=`${year}-${String(month+1).padStart(2,'0')}`;
   const dayList=Object.values(entries).filter(e=>e.date.startsWith(ms)&&e.line===line);
   const gN=dayList.filter(e=>e[cat.key]==='green').length;
@@ -1180,7 +1186,7 @@ function SqdpColumn({cat,year,month,line,entries,issues,setIssues,onToggle,onCat
           ))}
         </div>
         <div style={{flex:1,overflow:'auto',borderTop:`2px solid ${cat.light}`}}>
-          <ProblemTable cat={cat} line={line} issues={issues} setIssues={setIssues}
+          <ProblemTable cat={cat} line={line} issues={issues} setIssues={setIssues} onDeleteIssue={onDeleteIssue}
             year={year} month={month}
             currentPct={currentPct} goalVal={goalVal}
             onSetGoal={v=>setGoals(prev=>({...prev,[goalKey]:v}))}
@@ -1413,7 +1419,7 @@ function HelpPanel({onClose}){
 }
 
 // ─── MAIN BOARD ───────────────────────────────────────────────────────────────
-function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onSummary,goals,setGoals,locations,setLocations}){
+function MainBoard({entries,onToggle,onReset,issues,setIssues,onDeleteIssue,lines,setLines,onSummary,goals,setGoals,locations,setLocations}){
   const now=new Date();
   const [year,  setYear]  =useState(now.getFullYear());
   const [month, setMonth] =useState(now.getMonth());
@@ -1556,7 +1562,7 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,lines,setLines,onS
         }}>
           {CATS.map(cat=>(
             <SqdpColumn key={cat.key} cat={cat} year={year} month={month} line={line}
-              entries={entries} issues={issues} setIssues={setIssues}
+              entries={entries} issues={issues} setIssues={setIssues} onDeleteIssue={onDeleteIssue}
               onToggle={handleToggle} onCatClick={()=>setCatInfo(cat.key)}
               goals={goals} setGoals={setGoals}
               locations={locations}/>
@@ -2517,10 +2523,11 @@ useEffect(()=>{
 
 useEffect(()=>{
   if(lines.length === 0) return;
+  const currentYear = new Date().getFullYear();
   db.from('sqdp_entries')
   .select('line_id, date, category, status, comment')
-  .gte('date', '2026-01-01')
-  .lte('date', '2026-12-31')
+  .gte('date', `${currentYear}-01-01`)
+  .lte('date', `${currentYear}-12-31`)
     .then(({data, error})=>{
       if(error){ console.error('Błąd ładowania wpisów:', error.message); return; }
       if(!data || data.length === 0) return;
@@ -2594,7 +2601,7 @@ useEffect(()=>{
     try{ const s=localStorage.getItem('sqdp-extra-data'); return s?JSON.parse(s):{}; }catch{return {};}
   });
 
-  // Auto-save extraCols and extraData to localStorage whenever they change
+  
 // Auto-save extraCols and extraData to localStorage + Supabase
   const ORG = '00000000-0000-0000-0000-000000000001';
 
@@ -2647,6 +2654,28 @@ useEffect(()=>{
       }, {onConflict: 'line_id,year_month,field'})
         .then(({error}) => { if (error) console.error('Błąd zapisu summary cell:', error.message); });
     }
+  }, [lines]);
+
+// Dedykowane usuwanie issue — bezpośredni zapis do Supabase
+  const deleteIssuePersist = useCallback((id) => {
+    setIssues(prev => prev.filter(x => x.id !== id));
+    db.from('sqdp_issues').delete().eq('id', id)
+      .then(({error}) => {
+        if (error) {
+          console.error('❌ Błąd usuwania issue:', error.message, '| id:', id);
+          db.from('sqdp_issues').select('*').order('created_at', {ascending:false})
+            .then(({data}) => {
+              if (!data) return;
+              const mapped = data.map(issue => {
+                const lineObj = lines.find(l => l.id === issue.line_id);
+                return {...issue, line: lineObj?.name||'', date: issue.date||'', location: issue.location||''};
+              });
+              setIssues(mapped);
+            });
+        } else {
+          console.log('✅ Issue usunięty:', id);
+        }
+      });
   }, [lines]);
 
 const handleToggle=useCallback((line,dateStr,catKey,nextStatus,comment,loc)=>{
@@ -2781,7 +2810,7 @@ const handleReset=useCallback((line,year,month)=>{
       <div style={{height:0}}/>
       {view==='board'?(
         <MainBoard entries={entries} onToggle={handleToggle} onReset={handleReset}
-          issues={issues} setIssues={setIssuesPersist} lines={lines} setLines={setLines}
+          issues={issues} setIssues={setIssuesPersist} onDeleteIssue={deleteIssuePersist} lines={lines} setLines={setLines}
           goals={goals} setGoals={setGoals}
           locations={locations} setLocations={setLocations}
           uiScale={uiScale}
