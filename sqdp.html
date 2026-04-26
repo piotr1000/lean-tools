@@ -2455,6 +2455,7 @@ const setIssuesPersist = useCallback((updater)=>{
             area: issue.area,
             title: issue.title,
             status: issue.status||'open',
+            date: issue.date || new Date().toISOString().split('T')[0],
           }).then(({error})=>{ if(error) console.error('Błąd dodawania issue:', error.message); });
         } else {
           // Istniejące — update statusu
@@ -2491,10 +2492,10 @@ useEffect(()=>{
             // Mapuj line_id → line name
             const mapped = iData.map(issue=>{
               const lineObj = data.find(l=>l.id===issue.line_id);
-              return {
+            return {
                 ...issue,
                 line: lineObj?.name || '',
-                date: issue.created_at?.split('T')[0] || '',
+                date: issue.date || issue.created_at?.split('T')[0] || '',
               };
             });
             setIssues(mapped);
