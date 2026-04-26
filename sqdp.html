@@ -2449,13 +2449,14 @@ const setIssuesPersist = useCallback((updater)=>{
         if(!prevIds.has(issue.id)){
           // Nowe issue — insert
           const lineObj=lines.find(l=>l.name===issue.line||l.id===issue.line_id);
-          db.from('sqdp_issues').insert({
+        db.from('sqdp_issues').insert({
             organization_id: ORG,
             line_id: lineObj?.id || issue.line_id,
             area: issue.area,
             title: issue.title,
             status: issue.status||'open',
             date: issue.date || new Date().toISOString().split('T')[0],
+            location: issue.location || '',
           }).then(({error})=>{ if(error) console.error('Błąd dodawania issue:', error.message); });
         } else {
           // Istniejące — update statusu
@@ -2492,10 +2493,11 @@ useEffect(()=>{
             // Mapuj line_id → line name
             const mapped = iData.map(issue=>{
               const lineObj = data.find(l=>l.id===issue.line_id);
-            return {
+              return {
                 ...issue,
                 line: lineObj?.name || '',
                 date: issue.date || issue.created_at?.split('T')[0] || '',
+                location: issue.location || '',
               };
             });
             setIssues(mapped);
