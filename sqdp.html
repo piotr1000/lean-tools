@@ -1715,8 +1715,23 @@ function calcKpiFromEntries(line, year, month) {
   // For a row, get the effective S/Q/D/P — prefer live data if available
   function getKpi(row) {
     const live = calcKpiFromEntries(summLine, row.year, row.month);
-    if (live) return live;
-    if (row.S !== null) return {S:row.S, Q:row.Q, D:row.D, P:row.P, razem:row.razem};
+    const qFormula = calcPoprawnoscForRow(row);
+    const dFormula = calcPoprawnosc2(row);
+
+    if (live) {
+      const Q = qFormula !== null ? qFormula : live.Q;
+      const D = dFormula !== null ? dFormula : live.D;
+      const vals = [live.S, Q, D, live.P].filter(v => v !== null);
+      const razem = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10000)/10000 : null;
+      return {...live, Q, D, razem};
+    }
+    if (row.S !== null) {
+      const Q = qFormula !== null ? qFormula : row.Q;
+      const D = dFormula !== null ? dFormula : row.D;
+      const vals = [row.S, Q, D, row.P].filter(v => v !== null);
+      const razem = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10000)/10000 : null;
+      return {S:row.S, Q, D, P:row.P, razem};
+    }
     return null;
   }
 
@@ -1813,6 +1828,21 @@ function getBledyForMonth(lineName, year, month){
     if(!wys || isNaN(wys)) return null;
     return (wys - (isNaN(nit)?0:nit)) / wys;
   }
+
+  
+
+// Q z wzoru: (wyd_poz - pomylki) / wyd_poz — działa dla historycznych i live
+  function calcPoprawnoscForRow(row) {
+    const pozRaw = row.wyd_poz ?? getCell(row.key, 'wyd_poz');
+    const pomRaw = row.pomylki ?? getCell(row.key, 'pomylki');
+    const poz = parseFloat(pozRaw);
+    const pom = parseFloat(pomRaw ?? 0);
+    if (!poz || isNaN(poz)) return null;
+    return (poz - (isNaN(pom) ? 0 : pom)) / poz;
+  }
+
+  // D z wzoru: (wysylki - nieterminowe) / wysylki — calcPoprawnosc2 już to robi przez getCell
+  // calcPoprawnosc2(row) jest gotowe — używamy bezpośrednio
 
   // Fixed columns definition
   const fixedCols = [
@@ -2397,7 +2427,7 @@ function getBledyForMonth(lineName, year, month){
                     border:'1px solid #dbeafe'}}>
                     <div style={{fontSize:'0.6875rem',color:'#64748b',fontWeight:600,
                       textTransform:'uppercase',letterSpacing:0.5,marginBottom:'0.25rem'}}>
-                      Poprawność wysyłek (Delivery)
+                      Terminowość wysyłek (Delivery)
                     </div>
                     <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'0.5rem'}}>
                       <span style={{fontSize:'0.75rem',color:'#64748b'}}>Cel: <strong>{TARGET_DELIVERY}%</strong></span>
