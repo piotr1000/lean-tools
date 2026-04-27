@@ -28,13 +28,14 @@ const now = new Date();
 function initCells() {
   const c = {};
   DAYS.forEach((_,di) => SUBS.forEach((_,si) => {
-    c[`${di}_${si}`] = { o1:'',o2:'',o3:'',o4:'',uwagi:'',dzialania:'',kto:'',termin:'',ocena:'' };
+    c[`${di}_${si}`] = { o1:'',o2:'',o3:'',o4:'',uwagi:'',dzialania:'',kto:'',termin:'',ocena:'',wykonane:false };
   }));
   return c;
 }
 
-function computeOcena(uwagi, termin) {
-  if (!uwagi.trim()) return 'green';
+function computeOcena(uwagi, termin, wykonane) {
+  if (wykonane) return 'green';
+  if (!uwagi.trim()) return '';
   if (termin) {
     const d = new Date(termin);
     if (!isNaN(d) && new Date() > d) return 'red';
@@ -231,111 +232,256 @@ function AreaHeader({ value, onChange }) {
 }
 
 /* ════════════════════════════════════════════════════════
-   STATISTICS MODAL
+   SAVE AUDIT MODAL
 ════════════════════════════════════════════════════════ */
-function StatsModal({ cells, areaLabels, statsNotes, onNoteChange, onClose }) {
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [sortBy, setSortBy]             = useState('status'); // 'status' | 'area' | 'day'
-
-  /* Collect all rows with uwagi */
-  const issues = [];
-  DAYS.forEach((day, di) => {
-    SUBS.forEach((sub, si) => {
-      const cell = cells[`${di}_${si}`];
-      if (!cell.uwagi.trim()) return;
-
-      /* Determine which area columns have content */
-      const obszary = ['o1','o2','o3','o4']
-        .filter(k => cell[k].trim())
-        .map(k => ({ key: k, label: areaLabels[k], value: cell[k] }));
-
-      issues.push({
-        key: `${di}_${si}`,
-        day, sub, di, si,
-        obszary,
-        uwagi:    cell.uwagi,
-        ocena:    cell.ocena,
-        termin:   cell.termin,
-        kto:      cell.kto,
-        dzialania: cell.dzialania,
-      });
-    });
-  });
-
-  /* Filter */
-  const filtered = issues.filter(i => filterStatus === 'all' || i.ocena === filterStatus);
-
-  /* Sort */
-  const sorted = [...filtered].sort((a,b) => {
-    if (sortBy === 'status') {
-      const order = { red: 0, yellow: 1, green: 2, '': 3 };
-      return (order[a.ocena] ?? 3) - (order[b.ocena] ?? 3);
-    }
-    if (sortBy === 'area') {
-      const aL = a.obszary[0]?.label || '';
-      const bL = b.obszary[0]?.label || '';
-      return aL.localeCompare(bL, 'pl');
-    }
-    return a.di - b.di || a.si - b.si; // by day
-  });
-
-  /* Summary counts */
-  const countByStatus = { red: 0, yellow: 0, green: 0 };
-  issues.forEach(i => { if (countByStatus[i.ocena] !== undefined) countByStatus[i.ocena]++; });
+function SaveAuditModal({ month, year, auditArchive, onSave, onClose }) {
+  const [auditNum, setAuditNum] = useState(null);
+  const [clearAfter, setClearAfter] = useState(false);
+  const existing = auditArchive[year]?.[month] || {};
+  const fmtSaved = (iso) => iso
+    ? new Date(iso).toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
+    : null;
 
   return (
-    <div className="modal-overlay" onClick={e => { if(e.target.className === 'modal-overlay') onClose(); }}>
-      <div className="modal-box">
-
-        {/* ── Modal header ── */}
+    <div className="modal-overlay" onClick={e=>{ if(e.target.className==='modal-overlay') onClose(); }}>
+      <div className="modal-box" style={{ maxWidth:'480px' }}>
         <div className="modal-hdr">
           <div className="modal-title-block">
             <span className="modal-pretitle">Kamishibai</span>
-            <span className="modal-title">📊 Statystyki problemów</span>
+            <span className="modal-title">💾 Zapisz audyt</span>
           </div>
-          <div className="modal-summary">
-            {[['red','#ef4444','Problemy'],['yellow','#eab308','Uwagi'],['green','#22c55e','OK']].map(([s,c,l]) => (
-              <div key={s} className="modal-stat-pill" style={{ borderColor: c, background: c+'22' }}>
-                <span className="modal-stat-dot" style={{ background: c }} />
-                <span className="modal-stat-count" style={{ color: c }}>{countByStatus[s]}</span>
-                <span className="modal-stat-label">{l}</span>
-              </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ padding:'1.5rem' }}>
+          <p style={{ margin:'0 0 1rem', color:'#475569', fontSize:'0.875rem' }}>
+            Zapisujesz audyt dla: <strong style={{color:'#1e293b'}}>{MONTHS[month]} {year}</strong>
+          </p>
+          <div style={{ display:'flex', gap:'1rem', marginBottom:'1.25rem' }}>
+            {[1,2].map(n => (
+              <button key={n} onClick={() => setAuditNum(n)}
+                style={{
+                  flex:1, padding:'0.875rem', borderRadius:'0.5rem', cursor:'pointer',
+                  border: auditNum===n ? '2px solid #3b82f6' : '1px solid #d4c9b0',
+                  background: auditNum===n ? '#eff6ff' : 'white',
+                  fontFamily:'inherit', fontSize:'1rem', fontWeight:700,
+                  color: auditNum===n ? '#2563eb' : '#374151', transition:'all 0.15s',
+                }}>
+                Audyt {n}
+                {existing[n] ? (
+                  <span style={{ display:'block', fontSize:'0.625rem', fontWeight:400, color:'#ef4444', marginTop:'0.3rem' }}>
+                    ⚠ Nadpisze: {fmtSaved(existing[n].savedAt)}
+                  </span>
+                ) : (
+                  <span style={{ display:'block', fontSize:'0.625rem', fontWeight:400, color:'#22c55e', marginTop:'0.3rem' }}>
+                    ✓ Wolny slot
+                  </span>
+                )}
+              </button>
             ))}
-            <span className="modal-total">Łącznie: <b>{issues.length}</b></span>
+          </div>
+          <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', cursor:'pointer', marginBottom:'1.5rem', fontSize:'0.875rem', color:'#374151' }}>
+            <input type="checkbox" checked={clearAfter} onChange={e=>setClearAfter(e.target.checked)} style={{ width:'1rem', height:'1rem' }} />
+            Wyczyść tablicę po zapisaniu (gotowa na kolejny audyt)
+          </label>
+          <div style={{ display:'flex', gap:'0.75rem', justifyContent:'flex-end' }}>
+            <button className="k-btn k-btn-cancel" onClick={onClose}>Anuluj</button>
+            <button className="k-btn" disabled={!auditNum}
+              onClick={() => auditNum && onSave(auditNum, clearAfter)}
+              style={{ background:auditNum?'#16a34a':'#a8a29e', color:'white', border:'none', opacity:auditNum?1:0.65, cursor:auditNum?'pointer':'not-allowed' }}>
+              💾 Zapisz audyt {auditNum || ''}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════
+   STATISTICS MODAL — archiwum audytów
+════════════════════════════════════════════════════════ */
+function StatsModal({ auditArchive, areaLabels, statsNotes, onNoteChange, onClose, currentMonth, currentYear, onDeleteAudit, onRestoreAudit }) {
+  const [selYear,       setSelYear]       = useState(currentYear);
+  const [selMonth,      setSelMonth]      = useState(currentMonth);
+  const [selAudit,      setSelAudit]      = useState(1);
+  const [filterStatus,  setFilterStatus]  = useState('all');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const snapshot = auditArchive[selYear]?.[selMonth]?.[selAudit] || null;
+  const snapCells = snapshot?.cells || {};
+
+  /* Zbierz problemy ze snapshotu */
+  const issues = [];
+  if (snapshot) {
+    DAYS.forEach((day, di) => {
+      SUBS.forEach((sub, si) => {
+        const cell = snapCells[`${di}_${si}`];
+        if (!cell?.uwagi?.trim()) return;
+        const obszary = ['o1','o2','o3','o4']
+          .filter(k => cell[k]?.trim())
+          .map(k => ({ key: k, label: areaLabels[k], value: cell[k] }));
+        issues.push({ key:`${di}_${si}`, day, sub, di, si, obszary,
+          uwagi:cell.uwagi, ocena:cell.ocena, termin:cell.termin,
+          kto:cell.kto, dzialania:cell.dzialania, wykonane:cell.wykonane });
+      });
+    });
+  }
+
+  const filtered = filterStatus === 'all' ? issues : issues.filter(i => i.ocena === filterStatus);
+  const countByStatus = { red:0, yellow:0, green:0 };
+  issues.forEach(i => { if (countByStatus[i.ocena] !== undefined) countByStatus[i.ocena]++; });
+
+  const availableYears = [...new Set([currentYear, currentYear-1, ...Object.keys(auditArchive).map(Number)])].sort((a,b)=>b-a);
+  const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('pl-PL',{day:'2-digit',month:'2-digit',year:'numeric'}) : '';
+
+  return (
+    <div className="modal-overlay" onClick={e=>{ if(e.target.className==='modal-overlay') onClose(); }}>
+      <div className="modal-box">
+
+        {/* ── Header ── */}
+        <div className="modal-hdr">
+          <div className="modal-title-block">
+            <span className="modal-pretitle">Kamishibai</span>
+            <span className="modal-title">📊 Archiwum audytów</span>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        {/* ── Filters ── */}
-        <div className="modal-filters">
-          <div className="filter-group">
-            <span className="filter-label">Status:</span>
-            {[['all','Wszystkie','#64748b'],['red','Problem','#ef4444'],['yellow','Uwaga','#eab308'],['green','OK','#22c55e']].map(([v,l,c]) => (
-              <button key={v} onClick={() => setFilterStatus(v)}
-                className={`filter-btn ${filterStatus===v?'filter-active':''}`}
-                style={filterStatus===v ? { borderColor: c, color: c, background: c+'18' } : {}}>
-                {l}
+        {/* ── Rok + Miesiące ── */}
+        <div style={{ background:'#1e293b', padding:'0.75rem 1.5rem', display:'flex', gap:'1.25rem', alignItems:'center', borderBottom:'2px solid #0f172a', flexWrap:'wrap' }}>
+          <div style={{ display:'flex', gap:'0.4rem', alignItems:'center' }}>
+            <span style={{ fontSize:'0.6rem', color:'#64748b', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em' }}>Rok:</span>
+            {availableYears.map(y => (
+              <button key={y} onClick={() => setSelYear(y)}
+                style={{ background:selYear===y?'#38bdf8':'#334155', color:selYear===y?'#0f172a':'#94a3b8', border:'none', borderRadius:'0.3rem', padding:'0.2rem 0.6rem', fontSize:'0.75rem', fontWeight:700, cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s' }}>
+                {y}
               </button>
             ))}
           </div>
-          <div className="filter-group">
-            <span className="filter-label">Sortuj:</span>
-            {[['status','Wg statusu'],['area','Wg obszaru'],['day','Wg dnia']].map(([v,l]) => (
-              <button key={v} onClick={() => setSortBy(v)}
-                className={`filter-btn ${sortBy===v?'filter-active':''}`}
-                style={sortBy===v ? { borderColor: '#38bdf8', color: '#38bdf8', background: '#38bdf822' } : {}}>
-                {l}
-              </button>
-            ))}
+          <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap' }}>
+            {MONTHS.map((m, mi) => {
+              const hasData = !!(auditArchive[selYear]?.[mi]);
+              const isSel   = selMonth === mi;
+              return (
+                <button key={mi} onClick={() => { setSelMonth(mi); setSelAudit(1); setFilterStatus('all'); }}
+                  style={{
+                    background: isSel?'#38bdf8': hasData?'#1e3a5f':'transparent',
+                    color: isSel?'#0f172a': hasData?'#7dd3fc':'#475569',
+                    border: isSel?'none': hasData?'1px solid #2563eb':'1px solid #334155',
+                    borderRadius:'0.3rem', padding:'0.2rem 0.45rem', fontSize:'0.6875rem',
+                    fontWeight:isSel?700:500, cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s',
+                  }}>
+                  {m.slice(0,3)}
+                  {hasData && <span style={{ display:'block', fontSize:'0.45rem', color:isSel?'#0f172a':'#38bdf8', textAlign:'center' }}>●</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* ── Table ── */}
-        {sorted.length === 0 ? (
+        {/* ── Audyt 1 / Audyt 2 ── */}
+        <div style={{ background:'#f1ede4', padding:'0.65rem 1.5rem', display:'flex', gap:'0.75rem', alignItems:'center', borderBottom:'1px solid #e2ddd4', flexWrap:'wrap' }}>
+          <span style={{ fontSize:'0.75rem', color:'#78716c', fontWeight:600 }}>{MONTHS[selMonth]} {selYear}:</span>
+
+          {/* Zakładki Audyt 1 / Audyt 2 */}
+          {[1,2].map(n => {
+            const snap = auditArchive[selYear]?.[selMonth]?.[n];
+            const isSel = selAudit === n;
+            return (
+              <button key={n} onClick={() => { setSelAudit(n); setFilterStatus('all'); setConfirmDelete(false); }}
+                style={{
+                  background: isSel?'#1e293b':'white', color: isSel?'white':'#374151',
+                  border: isSel?'none':'1px solid #d4c9b0', borderRadius:'0.4rem',
+                  padding:'0.35rem 1rem', fontSize:'0.8125rem', fontWeight:700,
+                  cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s',
+                }}>
+                Audyt {n}
+                {snap
+                  ? <span style={{ display:'block', fontSize:'0.575rem', fontWeight:400, color:isSel?'#94a3b8':'#a8a29e' }}>{fmtDate(snap.savedAt)}</span>
+                  : <span style={{ display:'block', fontSize:'0.575rem', fontWeight:400, color:'#d4c9b0' }}>Brak danych</span>
+                }
+              </button>
+            );
+          })}
+
+          {/* Akcje: przywróć / usuń */}
+          {snapshot && !confirmDelete && (
+            <div style={{ display:'flex', gap:'0.4rem', alignItems:'center' }}>
+              <button onClick={() => onRestoreAudit(snapshot)}
+                title="Załaduj audyt z powrotem na tablicę do edycji"
+                style={{ background:'rgba(56,189,248,0.12)', color:'#38bdf8', border:'1px solid rgba(56,189,248,0.35)', borderRadius:'0.35rem', padding:'0.25rem 0.7rem', fontSize:'0.6875rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                🔄 Przywróć na tablicę
+              </button>
+              <button onClick={() => setConfirmDelete(true)}
+                title="Usuń ten audyt z archiwum"
+                style={{ background:'rgba(220,38,38,0.08)', color:'#ef4444', border:'1px solid rgba(220,38,38,0.3)', borderRadius:'0.35rem', padding:'0.25rem 0.7rem', fontSize:'0.6875rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                🗑 Usuń audyt
+              </button>
+            </div>
+          )}
+
+          {/* Potwierdzenie usunięcia */}
+          {snapshot && confirmDelete && (
+            <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', background:'#fff1f2', border:'1px solid #fca5a5', borderRadius:'0.5rem', padding:'0.3rem 0.75rem' }}>
+              <span style={{ fontSize:'0.75rem', color:'#b91c1c', fontWeight:600 }}>
+                Usunąć Audyt {selAudit} — {MONTHS[selMonth]} {selYear}?
+              </span>
+              <button onClick={() => { onDeleteAudit(selYear, selMonth, selAudit); setConfirmDelete(false); }}
+                style={{ background:'#dc2626', color:'white', border:'none', borderRadius:'0.3rem', padding:'0.2rem 0.7rem', fontSize:'0.6875rem', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+                Tak, usuń
+              </button>
+              <button onClick={() => setConfirmDelete(false)}
+                style={{ background:'transparent', color:'#64748b', border:'1px solid #cbd5e1', borderRadius:'0.3rem', padding:'0.2rem 0.7rem', fontSize:'0.6875rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
+                Anuluj
+              </button>
+            </div>
+          )}
+
+          {/* Statystyki — liczniki */}
+          {snapshot && !confirmDelete && (
+            <div style={{ display:'flex', gap:'0.5rem', marginLeft:'auto', flexWrap:'wrap', alignItems:'center' }}>
+              {[['red','#ef4444','Problemy'],['yellow','#eab308','Uwagi'],['green','#22c55e','OK']].map(([s,c,l]) => (
+                <div key={s} className="modal-stat-pill" style={{ borderColor:c, background:c+'22' }}>
+                  <span className="modal-stat-dot" style={{ background:c }} />
+                  <span className="modal-stat-count" style={{ color:c }}>{countByStatus[s]}</span>
+                  <span className="modal-stat-label">{l}</span>
+                </div>
+              ))}
+              <span className="modal-total">Łącznie: <b>{issues.length}</b></span>
+            </div>
+          )}
+        </div>
+
+        {/* ── Filtry ── */}
+        {snapshot && (
+          <div className="modal-filters">
+            <div className="filter-group">
+              <span className="filter-label">Status:</span>
+              {[['all','Wszystkie','#64748b'],['red','Problem','#ef4444'],['yellow','Uwaga','#eab308'],['green','OK','#22c55e']].map(([v,l,c]) => (
+                <button key={v} onClick={() => setFilterStatus(v)}
+                  className={`filter-btn ${filterStatus===v?'filter-active':''}`}
+                  style={filterStatus===v?{ borderColor:c, color:c, background:c+'18' }:{}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            {snapshot.dyzurny && (
+              <span style={{ fontSize:'0.75rem', color:'#78716c' }}>👤 Dyżurny: <strong>{snapshot.dyzurny}</strong></span>
+            )}
+          </div>
+        )}
+
+        {/* ── Treść ── */}
+        {!snapshot ? (
           <div className="modal-empty">
-            {issues.length === 0
-              ? '✅ Brak wpisanych uwag — tablica czysta!'
-              : 'Brak wyników dla wybranego filtra.'}
+            📋 Brak zapisanego Audytu {selAudit} dla <strong>{MONTHS[selMonth]} {selYear}</strong>.<br/>
+            <span style={{ fontSize:'0.8125rem', color:'#a8a29e', marginTop:'0.5rem', display:'block' }}>
+              Użyj przycisku "💾 Zapisz audyt" na tablicy głównej.
+            </span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="modal-empty">
+            {issues.length === 0 ? '✅ Brak wpisanych uwag w tym audycie.' : 'Brak wyników dla wybranego filtra.'}
           </div>
         ) : (
           <div className="modal-table-wrap">
@@ -348,17 +494,19 @@ function StatsModal({ cells, areaLabels, statsNotes, onNoteChange, onClose }) {
                   <th style={{ width:'22%' }}>Opis problemu<br/><span className="th-sub">(z kolumny Uwagi)</span></th>
                   <th style={{ width:'10%' }}>Kto</th>
                   <th style={{ width:'8rem' }}>Termin</th>
-                  <th>Proponowane działania zaradcze<br/><span className="th-sub">(notatki kierownika / lidera)</span></th>
+                  <th>Działania zaradcze<br/><span className="th-sub">(notatki kierownika / lidera)</span></th>
                 </tr>
               </thead>
               <tbody>
-                {sorted.map(issue => {
-                  const note = statsNotes[issue.key] || '';
+                {filtered.map(issue => {
+                  const noteKey = `${selYear}_${selMonth}_${selAudit}_${issue.key}`;
+                  const note = statsNotes[noteKey] || '';
                   return (
                     <tr key={issue.key} className={`srow srow-${issue.ocena}`}>
                       <td className="s-status">
-                        <div className="s-dot" style={{ background: OC_BG[issue.ocena], borderColor: OC_RING[issue.ocena] }} />
-                        <span className="s-status-lbl" style={{ color: OC_RING[issue.ocena] }}>{OC_LABEL[issue.ocena]}</span>
+                        <div className="s-dot" style={{ background:OC_BG[issue.ocena], borderColor:OC_RING[issue.ocena] }} />
+                        <span className="s-status-lbl" style={{ color:OC_RING[issue.ocena] }}>{OC_LABEL[issue.ocena]}</span>
+                        {issue.wykonane && <span style={{ display:'block', fontSize:'0.55rem', color:'#22c55e', fontWeight:700, marginTop:'0.2rem' }}>✓ WYKON.</span>}
                       </td>
                       <td className="s-day">
                         <span className="s-dayname">{issue.day}</span>
@@ -378,26 +526,18 @@ function StatsModal({ cells, areaLabels, statsNotes, onNoteChange, onClose }) {
                       </td>
                       <td className="s-problem">
                         <span className="s-problem-text">{issue.uwagi}</span>
-                        {issue.dzialania && (
-                          <span className="s-dzialania-ref">↳ {issue.dzialania}</span>
-                        )}
+                        {issue.dzialania && <span className="s-dzialania-ref">↳ {issue.dzialania}</span>}
                       </td>
                       <td className="s-kto">{issue.kto || '—'}</td>
                       <td className="s-termin">
-                        {issue.ocena === 'red' && (
-                          <span className="s-overdue">⚠ Po terminie</span>
-                        )}
-                        <span className={issue.ocena === 'red' ? 's-termin-red' : ''}>{fmtDatetime(issue.termin)}</span>
+                        {issue.ocena==='red' && !issue.wykonane && <span className="s-overdue">⚠ Po terminie</span>}
+                        <span className={issue.ocena==='red' && !issue.wykonane?'s-termin-red':''}>{fmtDatetime(issue.termin)}</span>
                       </td>
                       <td className="s-note-td">
-                        <textarea
-                          className="s-note-input"
-                          value={note}
-                          onChange={e => onNoteChange(issue.key, e.target.value)}
-                          placeholder="Wpisz działania zaradcze, uwagi kierownika..."
-                          rows={2}
-                          onInput={e => { e.target.style.height='auto'; e.target.style.height=e.target.scrollHeight+'px'; }}
-                        />
+                        <textarea className="s-note-input" value={note}
+                          onChange={e => onNoteChange(noteKey, e.target.value)}
+                          placeholder="Wpisz działania zaradcze..." rows={2}
+                          onInput={e=>{ e.target.style.height='auto'; e.target.style.height=e.target.scrollHeight+'px'; }} />
                       </td>
                     </tr>
                   );
@@ -409,7 +549,7 @@ function StatsModal({ cells, areaLabels, statsNotes, onNoteChange, onClose }) {
 
         <div className="modal-footer">
           <span className="modal-footer-note">
-            💡 Notatki w kolumnie "Działania zaradcze" są zapisywane dynamicznie i widoczne tylko w tym panelu.
+            💡 Notatki są zapisywane dynamicznie per audyt.
           </span>
           <button className="k-btn k-btn-cancel" onClick={onClose}>Zamknij</button>
         </div>
@@ -422,62 +562,100 @@ function StatsModal({ cells, areaLabels, statsNotes, onNoteChange, onClose }) {
    MAIN APP
 ════════════════════════════════════════════════════════ */
 function App() {
-  const [month, setMonth]           = useState(now.getMonth());
-  const [year,  setYear]            = useState(now.getFullYear());
-  const [areaLabels, setAreaLabels] = useState({ o1:'OBSZAR 1',o2:'OBSZAR 2',o3:'OBSZAR 3',o4:'OBSZAR 4' });
-  const [cells, setCells]           = useState(initCells);
-  const [dyzurny, setDyzurny]       = useState('');
+  const [month, setMonth]               = useState(now.getMonth());
+  const [year,  setYear]                = useState(now.getFullYear());
+  const [areaLabels, setAreaLabels]     = useState({ o1:'OBSZAR 1',o2:'OBSZAR 2',o3:'OBSZAR 3',o4:'OBSZAR 4' });
+  const [cells, setCells]               = useState(initCells);
+  const [dyzurny, setDyzurny]           = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
-  const [showStats, setShowStats]   = useState(false);
-  const [statsNotes, setStatsNotes] = useState({});   // { [di_si]: string }
+  const [showStats, setShowStats]       = useState(false);
+  const [showAuditSave, setShowAuditSave] = useState(false);
+  const [statsNotes, setStatsNotes]     = useState({});
+  const [auditArchive, setAuditArchive] = useState({});
 
   /* Active issue count for badge */
   const activeIssues = Object.values(cells).filter(c => c.uwagi.trim()).length;
 
   /* ── Auto-check deadlines every minute ── */
-  useEffect(() => {
-    const tick = () => {
-      setCells(prev => {
-        let changed = false;
-        const next = { ...prev };
-        Object.keys(next).forEach(k => {
-          const cell = next[k];
-          if (!cell.uwagi.trim()) return;
-          const auto = computeOcena(cell.uwagi, cell.termin);
-          if (auto !== cell.ocena) { next[k] = { ...cell, ocena: auto }; changed = true; }
-        });
-        return changed ? next : prev;
+useEffect(() => {
+  const tick = () => {
+    setCells(prev => {
+      let changed = false;
+      const next = { ...prev };
+      Object.keys(next).forEach(k => {
+        const cell = next[k];
+        if (!cell.uwagi.trim() || cell.wykonane) return;
+        const auto = computeOcena(cell.uwagi, cell.termin, cell.wykonane);
+        if (auto !== cell.ocena) { next[k] = { ...cell, ocena: auto }; changed = true; }
       });
-    };
-    tick();
-    const id = setInterval(tick, 60_000);
-    return () => clearInterval(id);
-  }, []);
+      return changed ? next : prev;
+    });
+  };
+  tick();
+  const id = setInterval(tick, 60_000);
+  return () => clearInterval(id);
+}, []);
 
   /* ── Update cell with auto-ocena ── */
-  const updateCell = useCallback((di, si, field, val) => {
-    setCells(prev => {
-      const key  = `${di}_${si}`;
-      const old  = prev[key];
-      const upd  = { ...old, [field]: val };
-      if (field === 'uwagi' || field === 'termin') {
-        const uwagi  = field === 'uwagi'  ? val : old.uwagi;
-        const termin = field === 'termin' ? val : old.termin;
-        if (!uwagi.trim()) {
-          upd.ocena = old.uwagi.trim() ? 'green' : old.ocena;
-        } else {
-          upd.ocena = computeOcena(uwagi, termin);
-        }
-      }
-      return { ...prev, [key]: upd };
-    });
-  }, []);
+const updateCell = useCallback((di, si, field, val) => {
+  setCells(prev => {
+    const key      = `${di}_${si}`;
+    const old      = prev[key];
+    const upd      = { ...old, [field]: val };
+    if (field === 'uwagi' || field === 'termin' || field === 'wykonane') {
+      const uwagi    = field === 'uwagi'    ? val : old.uwagi;
+      const termin   = field === 'termin'   ? val : old.termin;
+      const wykonane = field === 'wykonane' ? val : old.wykonane;
+      upd.ocena = computeOcena(uwagi, termin, wykonane);
+    }
+    return { ...prev, [key]: upd };
+  });
+}, []);
 
   const updateStatsNote = useCallback((key, val) => {
     setStatsNotes(prev => ({ ...prev, [key]: val }));
   }, []);
 
-  const clearMonth = () => { setCells(initCells()); setDyzurny(''); setStatsNotes({}); setConfirmClear(false); };
+  const clearMonth = () => { setCells(initCells()); setDyzurny(''); setConfirmClear(false); };
+
+  const saveAudit = useCallback((auditNum, clearAfter) => {
+    const snapshot = {
+      cells:      JSON.parse(JSON.stringify(cells)),
+      dyzurny,
+      savedAt:    new Date().toISOString(),
+      month,
+      year,
+    };
+    setAuditArchive(prev => {
+      const next = { ...prev };
+      if (!next[year])        next[year]        = {};
+      if (!next[year][month]) next[year][month] = {};
+      next[year][month][auditNum] = snapshot;
+      return next;
+    });
+    if (clearAfter) { setCells(initCells()); setDyzurny(''); }
+    setShowAuditSave(false);
+  }, [cells, dyzurny, month, year]);
+  const deleteAudit = useCallback((yr, mo, auditNum) => {
+    setAuditArchive(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next[yr]?.[mo]?.[auditNum]) {
+        delete next[yr][mo][auditNum];
+        if (Object.keys(next[yr][mo]).length === 0) delete next[yr][mo];
+        if (Object.keys(next[yr]).length === 0) delete next[yr];
+      }
+      return next;
+    });
+  }, []);
+
+  const restoreAudit = useCallback((snapshot) => {
+    if (window.confirm(`Przywrócić Audyt ${snapshot.month !== undefined ? MONTHS[snapshot.month] : ''} na tablicę?\n\nAktualna zawartość tablicy zostanie nadpisana.`)) {
+      setCells(snapshot.cells);
+      setDyzurny(snapshot.dyzurny || '');
+      setShowStats(false);
+    }
+  }, []);
+
   const prevMonth  = () => { if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1); };
   const nextMonth  = () => { if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1); };
 
@@ -511,11 +689,14 @@ function App() {
         </div>
 
         {/* ── Stats button ── */}
+        {/* ── Zapisz audyt ── */}
+        <button className="k-btn k-btn-audit" onClick={() => setShowAuditSave(true)}>
+          💾 Zapisz audyt
+        </button>
+
+        {/* ── Stats button ── */}
         <button className="k-btn k-btn-stats" onClick={() => setShowStats(true)}>
           📊 Statystyki
-          {activeIssues > 0 && (
-            <span className="stats-badge">{activeIssues}</span>
-          )}
         </button>
 
         {/* ── Clear ── */}
@@ -541,7 +722,8 @@ function App() {
               <col className="col-sub" />
               <col className="col-area" /><col className="col-area" />
               <col className="col-area" /><col className="col-area" />
-              <col className="col-text" /><col className="col-text" />
+              <col className="col-text" /><col className="col-cb" />
+              <col className="col-text" />
               <col className="col-kto" />
               <col className="col-oc" />
               <col className="col-tr" />
@@ -555,6 +737,7 @@ function App() {
                   </th>
                 ))}
                 <th className="th-base">Uwagi</th>
+                <th className="th-base" title="Zaznacz gdy wykonane">✓</th>
                 <th className="th-base">Działania</th>
                 <th className="th-base">Kto</th>
                 <th className="th-base">Ocena</th>
@@ -576,6 +759,12 @@ function App() {
                     ))}
                     <td className="td-data">
                       <Cell value={cell.uwagi} onChange={v=>updateCell(di,si,'uwagi',v)} placeholder="Wpisz uwagę..." />
+                    </td>
+                    <td className="td-cb">
+                      <input type="checkbox" className="cb-wykonane"
+                        checked={!!cell.wykonane}
+                        onChange={e => updateCell(di,si,'wykonane',e.target.checked)}
+                        title="Zaznacz gdy wykonane → kółko zielone" />
                     </td>
                     <td className="td-data">
                       <Cell value={cell.dzialania} onChange={v=>updateCell(di,si,'dzialania',v)} placeholder="Działania..." />
@@ -600,7 +789,11 @@ function App() {
                     onFocus={e => e.target.style.background='#fef9c3'}
                     onBlur={e  => e.target.style.background='transparent'} />
                 </td>
-                <td colSpan={5} className="td-dyz-empty" />
+                <td colSpan={6} className="td-dyz-empty" style={{ textAlign:'right', paddingRight:'1rem', verticalAlign:'middle' }}>
+                  <span style={{ fontSize:'0.6875rem', color:'#92400e', opacity:0.7, fontStyle:'italic', letterSpacing:'0.02em' }}>
+                    <strong style={{ fontStyle:'normal', opacity:1 }}>© 2026 Piotr Mieczkowski. All rights reserved.</strong>
+                  </span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -608,15 +801,33 @@ function App() {
       </div>
 
       {/* ═══ STATS MODAL ═══ */}
+      {showAuditSave && (
+        <SaveAuditModal
+          month={month}
+          year={year}
+          auditArchive={auditArchive}
+          onSave={saveAudit}
+          onClose={() => setShowAuditSave(false)}
+        />
+      )}
       {showStats && (
         <StatsModal
-          cells={cells}
+          auditArchive={auditArchive}
           areaLabels={areaLabels}
           statsNotes={statsNotes}
           onNoteChange={updateStatsNote}
           onClose={() => setShowStats(false)}
+          currentMonth={month}
+          currentYear={year}
+          onDeleteAudit={deleteAudit}
+          onRestoreAudit={restoreAudit}
         />
       )}
+
+      {/* ═══ FOOTER ═══ */}
+      <footer className="k-footer">
+        <span className="k-footer-copy">Designed by Piotr Mieczkowski</span>
+      </footer>
 
       {/* ═══ STYLES ═══ */}
       <style>{`
@@ -639,6 +850,8 @@ function App() {
           flex-shrink: 0; flex-wrap: nowrap; justify-content: center;
         }
         .k-header > * { flex-shrink: 0; }
+        .k-footer { background: #1e293b; border-top: 2px solid #0f172a; padding: 0.4rem 1.75rem; display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; }
+        .k-footer-copy { font-size: 0.6875rem; color: #475569; letter-spacing: 0.04em; }
         .k-spacer { flex: 1; max-width: 2rem; }
         .k-title-block { display: flex; flex-direction: column; }
         .k-sup { font-size: 0.625rem; letter-spacing: 0.2em; color: #64748b; text-transform: uppercase; margin-bottom: 0.2rem; }
@@ -943,6 +1156,17 @@ function App() {
         }
         .modal-footer-note { font-size: 0.6875rem; color: #78716c; }
 
+        /* ── Checkbox wykonane ── */
+        .col-cb { width: 2.2rem; }
+        .td-cb { border-right: 1px solid #d4c9b0; border-bottom: 1px solid #d4c9b0; vertical-align: middle; text-align: center; padding: 0.25rem; }
+        .cb-wykonane { width: 1.1rem; height: 1.1rem; cursor: pointer; accent-color: #16a34a; }
+
+        /* ── Przycisk zapisz audyt ── */
+        .k-btn-audit {
+          background: rgba(34,197,94,0.12); color: #22c55e;
+          border: 1px solid rgba(34,197,94,0.4);
+        }
+        .k-btn-audit:hover { background: rgba(34,197,94,0.22); }
         input:focus, textarea:focus { outline: 2px solid #3b82f6 !important; }
         @media (min-width: 2560px) { .k-root { font-size: clamp(1rem, 0.7vw, 1.1875rem); } }
         @media (min-width: 3200px) { .k-root { font-size: clamp(1.0625rem, 0.65vw, 1.25rem); } }
