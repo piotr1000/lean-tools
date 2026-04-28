@@ -14,7 +14,6 @@
 <script type="text/babel" data-presets="react">
 const { useState, useMemo, useEffect } = React;
 
-
 const C = {
   pageBg:"#cdc9bf", navyDark:"#1a2035", navyMid:"#232e4a", navyLight:"#2e3d5c",
   gold:"#c9a84c", cream1:"#f5f0dc", cream2:"#ece7d0", cream3:"#e2dcc8", cream4:"#f9f5e8",
@@ -59,10 +58,10 @@ const KAIZEN_TIPS = [
 ];
 
 const KANBAN_COLS = [
-  { key:"submitted",       label:"POMYSŁ ZGŁOSZONY",    color:C.cyan,   cardBg:"#eaf7fb", points:1 },
-  { key:"testing",         label:"W TRAKCIE TESTÓW",    color:C.amber,  cardBg:"#fdf5e4", points:3 },
-  { key:"accepted",        label:"POMYSŁ ZAAKCEPTOWANY",color:C.green,  cardBg:"#ebf7ef", points:5 },
-  { key:"standardization", label:"STANDARYZACJA",       color:C.purple, cardBg:"#f4f2fc", points:0 },
+  { key:"submitted",       label:"POMYSŁ ZGŁOSZONY",    color:C.cyan,   cardBg:"#eaf7fb" },
+  { key:"testing",         label:"W TRAKCIE TESTÓW",    color:C.amber,  cardBg:"#fdf5e4" },
+  { key:"accepted",        label:"POMYSŁ ZAAKCEPTOWANY",color:C.green,  cardBg:"#ebf7ef" },
+  { key:"standardization", label:"STANDARYZACJA",       color:C.purple, cardBg:"#f4f2fc" },
 ];
 
 const STATUS_CFG = {
@@ -73,12 +72,6 @@ const STATUS_CFG = {
   rejected:        { label:"Odrzucony",    color:C.red    },
 };
 
-const MONTHLY_GOAL = 5;
-
-function mkRows(n=10) {
-  return Array.from({length:n},(_,i)=>({id:Date.now()+i+Math.random(),person:"",idea:"",status:"submitted"}));
-}
-
 function Badge({count}) {
   if (count<1) return null;
   const b=[{at:1,icon:"🌱"},{at:3,icon:"🔥"},{at:5,icon:"⭐"},{at:10,icon:"🏅"},{at:20,icon:"🏆"}];
@@ -86,16 +79,14 @@ function Badge({count}) {
   return earned?<span title={earned.label||""} style={{fontSize:"13px"}}>{earned.icon}</span>:null;
 }
 
-const RANK_STYLES = {
-  1: { color:"#D4AF37", bg:"#fffaed", medal:"🥇", h:120 },
-  2: { color:"#9a9a9a", bg:"#f7f7f7", medal:"🥈", h:85  },
-  3: { color:"#b87333", bg:"#fdf5ee", medal:"🥉", h:65  },
-};
+function mkRows(n=10) {
+  return Array.from({length:n},(_,i)=>({id:Date.now()+i+Math.random(),person:"",idea:"",status:"submitted"}));
+}
 
 function App() {
   const [monthIdx,setMonthIdx] = useState(3);
   const [year,setYear]         = useState(2026);
-  const [showRanking,setShowRanking] = useState(false);
+  const [showStats,setShowStats] = useState(false);
   const [tipIdx,setTipIdx]     = useState(0);
   const [allData,setAllData]   = useState({"2026-04":mkRows()});
   const [flash,setFlash]       = useState(null);
@@ -115,7 +106,7 @@ function App() {
 
   const moveStatus=(id,ns)=>{
     setRows(rows.map(r=>r.id===id?{...r,status:ns}:r));
-    const msg=ns==="accepted"?"🎉 Pomysł zaakceptowany! +5 pkt":ns==="rejected"?"❌ Pomysł odrzucony":`→ ${STATUS_CFG[ns].label}`;
+    const msg=ns==="accepted"?"🎉 Pomysł zaakceptowany!":ns==="rejected"?"❌ Pomysł odrzucony":`→ ${STATUS_CFG[ns].label}`;
     setFlash({id,msg});
     setTimeout(()=>setFlash(null),2500);
   };
@@ -129,123 +120,34 @@ function App() {
     return m;
   },[rows]);
 
+  // Per-person stats for current month (for badge display in kanban cards)
   const personStats=useMemo(()=>{
     const s={};
     active.forEach(r=>{
       if(!r.person.trim())return;
-      if(!s[r.person])s[r.person]={points:0,accepted:0,submitted:0};
-      const col=KANBAN_COLS.find(c=>c.key===r.status);
-      s[r.person].points+=col?.points??1;
+      if(!s[r.person])s[r.person]={submitted:0,accepted:0};
       s[r.person].submitted++;
       if(r.status==="accepted")s[r.person].accepted++;
     });
     return s;
   },[rows]);
 
-  // Sort: accepted desc → points desc
-  const ranking=useMemo(()=>
-    Object.entries(personStats)
-      .sort((a,b)=>b[1].accepted-a[1].accepted||b[1].points-a[1].points)
-      .map(([person,s])=>({person,...s})),
-  [personStats]);
-
-  // ── TIE = same accepted AND same points ──────────────────────
-  const podiumGroups=useMemo(()=>{
-    const withAccepted=ranking.filter(r=>r.accepted>0);
-    const groups=[];
-    let rank=1;
-    let i=0;
-    while(i<withAccepted.length){
-      const cntA=withAccepted[i].accepted;
-      const cntP=withAccepted[i].points;
-      const group=[];
-      // Only tie when BOTH accepted AND points are equal
-      while(i<withAccepted.length&&withAccepted[i].accepted===cntA&&withAccepted[i].points===cntP){
-        group.push(withAccepted[i]);i++;
-      }
-      groups.push({rank,people:group,accepted:cntA,points:cntP});
-      rank+=group.length;
-    }
-    return groups;
-  },[ranking]);
-
-  const belowPodium=useMemo(()=>{
-    const podiumPeople=new Set(podiumGroups.slice(0,3).flatMap(g=>g.people.map(p=>p.person)));
-    return ranking.filter(r=>!podiumPeople.has(r.person));
-  },[ranking,podiumGroups]);
-
-  const acceptedCount=active.filter(r=>r.status==="accepted").length;
-  const progressPct=Math.min(100,Math.round(acceptedCount/MONTHLY_GOAL*100));
-
-  const globalRanking=useMemo(()=>{
-    const stats={};
-    MONTHS_PL.forEach((_,mi)=>{
-      const key=`${year}-${String(mi+1).padStart(2,"0")}`;
-      const mRows=allData[key]||[];
-      // Build per-person stats for this month (same logic as main personStats)
-      const mStats={};
-      mRows.filter(r=>r.idea?.trim()&&r.person?.trim()).forEach(r=>{
-        if(!mStats[r.person])mStats[r.person]={points:0,accepted:0};
-        const col=KANBAN_COLS.find(c=>c.key===r.status);
-        mStats[r.person].points+=col?.points??1;
-        if(r.status==="accepted")mStats[r.person].accepted++;
-      });
-      // Accumulate totalPts for all participants
-      Object.entries(mStats).forEach(([person,s])=>{
-        if(!stats[person])stats[person]={p1:0,p2:0,p3:0,total:0,totalPts:0};
-        stats[person].totalPts+=s.points;
-        stats[person].total+=s.accepted;
-      });
-      // Sort EXACTLY like main ranking: accepted desc → points desc
-      const sorted=Object.entries(mStats)
-        .filter(([,s])=>s.accepted>0)
-        .sort((a,b)=>b[1].accepted-a[1].accepted||b[1].points-a[1].points);
-      // Assign p1/p2/p3 with same tie logic (same accepted AND points = same rank)
-      let rank=1,i=0;
-      while(i<sorted.length){
-        const [,s0]=sorted[i];
-        const group=[];
-        while(i<sorted.length&&sorted[i][1].accepted===s0.accepted&&sorted[i][1].points===s0.points){
-          group.push(sorted[i][0]);i++;
-        }
-        group.forEach(person=>{
-          if(!stats[person])stats[person]={p1:0,p2:0,p3:0,total:0,totalPts:0};
-          if(rank===1)stats[person].p1++;
-          else if(rank===2)stats[person].p2++;
-          else if(rank===3)stats[person].p3++;
-        });
-        rank+=group.length;
-      }
-    });
-    return Object.entries(stats)
-      .sort((a,b)=>b[1].p1-a[1].p1||b[1].p2-a[1].p2||b[1].p3-a[1].p3||b[1].total-a[1].total||b[1].totalPts-a[1].totalPts)
-      .map(([person,s])=>({person,...s}));
-  },[allData,year]);
-
+  // Monthly breakdown for Stats modal — who submitted, how many ideas
   const monthlyBreakdown=useMemo(()=>MONTHS_PL.map((name,mi)=>{
     const key=`${year}-${String(mi+1).padStart(2,"0")}`;
     const mRows=allData[key]||[];
-    const mStats={};
+    const personMap={};
     mRows.filter(r=>r.idea?.trim()&&r.person?.trim()).forEach(r=>{
-      if(!mStats[r.person])mStats[r.person]={points:0,accepted:0};
-      const col=KANBAN_COLS.find(c=>c.key===r.status);
-      mStats[r.person].points+=col?.points??1;
-      if(r.status==="accepted")mStats[r.person].accepted++;
+      if(!personMap[r.person])personMap[r.person]=0;
+      personMap[r.person]++;
     });
-    const sorted=Object.entries(mStats)
-      .sort((a,b)=>b[1].accepted-a[1].accepted||b[1].points-a[1].points)
-      .map(([p,s])=>({p,...s}));
-    const top=sorted.filter(x=>x.accepted>0).slice(0,3).map(x=>({p:x.p,c:x.accepted}));
-    const participants=sorted.map(x=>({p:x.p,c:x.points}));
-    return {name,top,participants};
+    const participants=Object.entries(personMap)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([pName,count])=>({name:pName,count}));
+    return {name,participants};
   }),[allData,year]);
 
-  const podiumDisplayOrder=[1,0,2];
-
-  const inp={background:"transparent",border:"none",color:C.textDark,width:"100%",outline:"none",fontSize:"12px",padding:"2px 4px",fontFamily:"inherit"};
-  const navBtn={background:C.navyDark,border:`1px solid ${C.gold}`,color:C.gold,borderRadius:"4px",cursor:"pointer",fontFamily:"inherit",width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px"};
-
-  // Compact accepted summary for kanban
+  // Compact accepted summary for kanban accepted column
   const acceptedPersons=useMemo(()=>{
     const map={};
     byStatus.accepted.forEach(idea=>{
@@ -256,6 +158,9 @@ function App() {
     return map;
   },[byStatus]);
 
+  const inp={background:"transparent",border:"none",color:C.textDark,width:"100%",outline:"none",fontSize:"12px",padding:"2px 4px",fontFamily:"inherit"};
+  const navBtn={background:C.navyDark,border:`1px solid ${C.gold}`,color:C.gold,borderRadius:"4px",cursor:"pointer",fontFamily:"inherit",width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px"};
+
   return (
     <div style={{fontFamily:"'Segoe UI',Tahoma,sans-serif",background:C.pageBg,color:C.textDark,minHeight:"100vh"}}>
 
@@ -265,39 +170,28 @@ function App() {
       {/* HEADER */}
       <div style={{background:C.navyDark,borderBottom:`3px solid ${C.gold}`}}>
         <div style={{maxWidth:"1600px",margin:"0 auto",padding:"10px 20px",display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
-        <div>
-          <div style={{color:"#8a9ab5",fontSize:"10px",letterSpacing:"2px",fontWeight:"600"}}>TABLICA POMYSŁÓW</div>
-          <div style={{color:C.cyan,fontSize:"22px",fontWeight:"800",letterSpacing:"2px"}}>KAIZEN</div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:"8px",marginLeft:"8px"}}>
-          <button onClick={prevMonth} style={navBtn}>‹</button>
-          <div style={{color:C.gold,fontSize:"20px",fontWeight:"700",minWidth:"220px",textAlign:"center",letterSpacing:"1px"}}>{MONTHS_PL[monthIdx].toUpperCase()} {year}</div>
-          <button onClick={nextMonth} style={navBtn}>›</button>
-        </div>
-        <div style={{display:"flex",gap:"10px",marginLeft:"8px",flexWrap:"wrap"}}>
-          {Object.entries(STATUS_CFG).map(([k,v])=>(
-            <span key={k} style={{display:"flex",alignItems:"center",gap:"4px",fontSize:"10px",color:"#c8c0b0"}}>
-              <span style={{width:"9px",height:"9px",borderRadius:"50%",background:v.color,display:"inline-block"}}/>
-              {v.label}
-            </span>
-          ))}
-        </div>
-        <button onClick={()=>setShowRanking(true)} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${C.gold}`,color:C.gold,padding:"6px 18px",borderRadius:"5px",cursor:"pointer",fontSize:"13px",fontWeight:"700",letterSpacing:"1px",fontFamily:"inherit"}}>🏆 Ranking</button>
-        </div>
-      </div>
-
-      {/* PROGRESS */}
-      <div style={{background:C.navyMid,borderBottom:`1px solid ${C.gold}44`}}>
-        <div style={{maxWidth:"1600px",margin:"0 auto",padding:"7px 20px",display:"flex",alignItems:"center",gap:"12px"}}>
-        <span style={{fontSize:"11px",color:"#c8c0b0",whiteSpace:"nowrap"}}>CEL MIESIĄCA: {acceptedCount}/{MONTHLY_GOAL} zatwierdzonych</span>
-        <div style={{flex:1,background:"#111a2a",borderRadius:"10px",height:"7px",overflow:"hidden"}}>
-          <div style={{width:`${progressPct}%`,height:"100%",background:progressPct>=100?C.green:`linear-gradient(90deg,${C.cyan},${C.gold})`,borderRadius:"10px",transition:"width 0.5s ease"}}/>
-        </div>
-        <span style={{fontSize:"11px",color:progressPct>=100?C.green:C.gold,fontWeight:"600",whiteSpace:"nowrap"}}>{progressPct>=100?"🎉 CEL OSIĄGNIĘTY!":progressPct+"%"}</span>
+          <div>
+            <div style={{color:"#8a9ab5",fontSize:"10px",letterSpacing:"2px",fontWeight:"600"}}>TABLICA POMYSŁÓW</div>
+            <div style={{color:C.cyan,fontSize:"22px",fontWeight:"800",letterSpacing:"2px"}}>KAIZEN</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:"8px",marginLeft:"8px"}}>
+            <button onClick={prevMonth} style={navBtn}>‹</button>
+            <div style={{color:C.gold,fontSize:"20px",fontWeight:"700",minWidth:"220px",textAlign:"center",letterSpacing:"1px"}}>{MONTHS_PL[monthIdx].toUpperCase()} {year}</div>
+            <button onClick={nextMonth} style={navBtn}>›</button>
+          </div>
+          <div style={{display:"flex",gap:"10px",marginLeft:"8px",flexWrap:"wrap"}}>
+            {Object.entries(STATUS_CFG).map(([k,v])=>(
+              <span key={k} style={{display:"flex",alignItems:"center",gap:"4px",fontSize:"10px",color:"#c8c0b0"}}>
+                <span style={{width:"9px",height:"9px",borderRadius:"50%",background:v.color,display:"inline-block"}}/>
+                {v.label}
+              </span>
+            ))}
+          </div>
+          <button onClick={()=>setShowStats(true)} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${C.gold}`,color:C.gold,padding:"6px 18px",borderRadius:"5px",cursor:"pointer",fontSize:"13px",fontWeight:"700",letterSpacing:"1px",fontFamily:"inherit"}}>📊 Statystyki</button>
         </div>
       </div>
 
-      {/* KANBAN – fixed height columns with scroll */}
+      {/* KANBAN — fixed height columns with scroll */}
       <div style={{maxWidth:"1600px",margin:"14px auto 0",padding:"0 16px"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"1px",background:C.gold+"55",borderRadius:"8px",overflow:"hidden",border:`1px solid ${C.gold}55`}}>
         {KANBAN_COLS.map(col=>{
@@ -311,14 +205,13 @@ function App() {
                 <span style={{background:col.color+"33",border:`1px solid ${col.color}`,color:col.color,borderRadius:"10px",padding:"1px 7px",fontSize:"11px",fontWeight:"700"}}>{byStatus[col.key]?.length||0}</span>
               </div>
 
-              {/* ── ACCEPTED COLUMN: compact summary, no cards ── */}
+              {/* ACCEPTED COLUMN: compact summary */}
               {isAccepted?(
                 <div style={{padding:"10px 10px",minHeight:"120px",overflowY:"auto",maxHeight:"220px"}}>
                   {byStatus.accepted.length===0?(
                     <div style={{color:C.textMute,fontSize:"11px",textAlign:"center",padding:"28px 0",fontStyle:"italic"}}>— brak —</div>
                   ):(
                     <>
-                      {/* Summary count */}
                       <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",padding:"6px 8px",background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:"6px"}}>
                         <span style={{color:C.green,fontSize:"20px",fontWeight:"900"}}>{byStatus.accepted.length}</span>
                         <div>
@@ -326,7 +219,6 @@ function App() {
                           <div style={{color:C.textMute,fontSize:"9px"}}>szczegóły w tabeli ↓</div>
                         </div>
                       </div>
-                      {/* Person chips – grouped by person with count */}
                       <div style={{display:"flex",flexDirection:"column",gap:"3px"}}>
                         {Object.entries(acceptedPersons).map(([person,ideas])=>(
                           <div key={person} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 8px",background:C.green+"11",border:`1px solid ${C.green}33`,borderRadius:"4px"}}>
@@ -340,7 +232,7 @@ function App() {
                   )}
                 </div>
               ):(
-                /* ── OTHER COLUMNS: card view with scroll ── */
+                /* OTHER COLUMNS: card view with scroll */
                 <div style={{padding:"8px",overflowY:"auto",maxHeight:"220px",minHeight:"120px"}}>
                   {col.key==="submitted"&&byStatus.rejected?.length>0&&(
                     <div style={{marginBottom:"6px"}}>
@@ -385,129 +277,46 @@ function App() {
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{background:C.navyMid}}>
-              {["#","OSOBA","POMYSŁ DO WPROWADZENIA","STATUS","ZATWIERDZONY","PKT"].map((h,i)=>(
-                <th key={i} style={{padding:"10px 12px",fontWeight:"700",fontSize:"10px",letterSpacing:"1.5px",color:"#d8d0c0",borderBottom:`2px solid ${C.gold}`,textAlign:i===0||i===4||i===5?"center":"left",whiteSpace:"nowrap"}}>{h}</th>
+              {["#","OSOBA","POMYSŁ DO WPROWADZENIA","STATUS","ZATWIERDZONY"].map((h,i)=>(
+                <th key={i} style={{padding:"10px 12px",fontWeight:"700",fontSize:"10px",letterSpacing:"1.5px",color:"#d8d0c0",borderBottom:`2px solid ${C.gold}`,textAlign:i===0||i===4?"center":"left",whiteSpace:"nowrap"}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row,idx)=>{
-              const col=KANBAN_COLS.find(c=>c.key===row.status);
-              const pts=row.idea.trim()?(col?.points??1):0;
-              return (
-                <tr key={row.id} style={{background:idx%2===0?C.cream1:C.cream2,borderBottom:`1px solid ${C.borderPale}`}}>
-                  <td style={{padding:"5px 10px",color:C.textMute,fontSize:"11px",textAlign:"center",width:"28px"}}>{idx+1}</td>
-                  <td style={{padding:"5px 8px",width:"160px",borderRight:`1px solid ${C.borderPale}`}}>
-                    <input value={row.person} onChange={e=>upRow(row.id,"person",e.target.value)} placeholder="Imię i nazwisko" style={{...inp,color:row.person?C.textDark:C.textMute,fontStyle:row.person?"normal":"italic"}}/>
-                  </td>
-                  <td style={{padding:"5px 8px",borderRight:`1px solid ${C.borderPale}`}}>
-                    <input value={row.idea} onChange={e=>upRow(row.id,"idea",e.target.value)} placeholder="Wpisz pomysł ulepszenia..." style={{...inp,color:row.idea?C.textDark:C.textMute,fontStyle:row.idea?"normal":"italic"}}/>
-                  </td>
-                  <td style={{padding:"5px 8px",width:"150px",borderRight:`1px solid ${C.borderPale}`}}>
-                    {row.idea.trim()
-                      ?<select value={row.status} onChange={e=>moveStatus(row.id,e.target.value)} style={{background:C.cream1,border:`1px solid ${STATUS_CFG[row.status].color}`,color:STATUS_CFG[row.status].color,borderRadius:"4px",padding:"3px 6px",fontSize:"11px",cursor:"pointer",width:"100%",fontFamily:"inherit",fontWeight:"600"}}>
-                        {Object.entries(STATUS_CFG).map(([k,v])=>(<option key={k} value={k} style={{color:C.textDark,background:C.cream1}}>{v.label}</option>))}
-                       </select>
-                      :<span style={{color:C.borderPale,fontSize:"11px"}}>—</span>}
-                  </td>
-                  <td style={{padding:"5px 10px",textAlign:"center",width:"110px",borderRight:`1px solid ${C.borderPale}`}}>
-                    {row.status==="accepted"&&row.idea.trim()
-                      ?<span style={{color:C.green,fontWeight:"700",fontSize:"11px",display:"flex",alignItems:"center",justifyContent:"center",gap:"5px"}}><span style={{width:"11px",height:"11px",borderRadius:"50%",background:C.green,display:"inline-block"}}/>TAK</span>
-                      :row.status==="rejected"&&row.idea.trim()
-                      ?<span style={{color:C.red,fontWeight:"700",fontSize:"11px",display:"flex",alignItems:"center",justifyContent:"center",gap:"5px"}}><span style={{width:"11px",height:"11px",borderRadius:"50%",background:C.red,display:"inline-block"}}/>NIE</span>
-                      :row.idea.trim()
-                      ?<span style={{color:C.amber,fontSize:"10px"}}>⏳ W toku</span>
-                      :<span style={{color:C.borderPale,fontSize:"11px"}}>—</span>}
-                  </td>
-                  <td style={{padding:"5px 10px",textAlign:"center",width:"50px"}}>
-                    {pts>0?<span style={{color:C.gold,fontWeight:"700",fontSize:"13px"}}>+{pts}</span>:<span style={{color:C.borderPale}}>—</span>}
-                  </td>
-                </tr>
-              );
-            })}
+            {rows.map((row,idx)=>(
+              <tr key={row.id} style={{background:idx%2===0?C.cream1:C.cream2,borderBottom:`1px solid ${C.borderPale}`}}>
+                <td style={{padding:"5px 10px",color:C.textMute,fontSize:"11px",textAlign:"center",width:"28px"}}>{idx+1}</td>
+                <td style={{padding:"5px 8px",width:"160px",borderRight:`1px solid ${C.borderPale}`}}>
+                  <input value={row.person} onChange={e=>upRow(row.id,"person",e.target.value)} placeholder="Imię i nazwisko" style={{...inp,color:row.person?C.textDark:C.textMute,fontStyle:row.person?"normal":"italic"}}/>
+                </td>
+                <td style={{padding:"5px 8px",borderRight:`1px solid ${C.borderPale}`}}>
+                  <input value={row.idea} onChange={e=>upRow(row.id,"idea",e.target.value)} placeholder="Wpisz pomysł ulepszenia..." style={{...inp,color:row.idea?C.textDark:C.textMute,fontStyle:row.idea?"normal":"italic"}}/>
+                </td>
+                <td style={{padding:"5px 8px",width:"150px",borderRight:`1px solid ${C.borderPale}`}}>
+                  {row.idea.trim()
+                    ?<select value={row.status} onChange={e=>moveStatus(row.id,e.target.value)} style={{background:C.cream1,border:`1px solid ${STATUS_CFG[row.status].color}`,color:STATUS_CFG[row.status].color,borderRadius:"4px",padding:"3px 6px",fontSize:"11px",cursor:"pointer",width:"100%",fontFamily:"inherit",fontWeight:"600"}}>
+                      {Object.entries(STATUS_CFG).map(([k,v])=>(<option key={k} value={k} style={{color:C.textDark,background:C.cream1}}>{v.label}</option>))}
+                     </select>
+                    :<span style={{color:C.borderPale,fontSize:"11px"}}>—</span>}
+                </td>
+                <td style={{padding:"5px 10px",textAlign:"center",width:"110px"}}>
+                  {row.status==="accepted"&&row.idea.trim()
+                    ?<span style={{color:C.green,fontWeight:"700",fontSize:"11px",display:"flex",alignItems:"center",justifyContent:"center",gap:"5px"}}><span style={{width:"11px",height:"11px",borderRadius:"50%",background:C.green,display:"inline-block"}}/>TAK</span>
+                    :row.status==="rejected"&&row.idea.trim()
+                    ?<span style={{color:C.red,fontWeight:"700",fontSize:"11px",display:"flex",alignItems:"center",justifyContent:"center",gap:"5px"}}><span style={{width:"11px",height:"11px",borderRadius:"50%",background:C.red,display:"inline-block"}}/>NIE</span>
+                    :row.idea.trim()
+                    ?<span style={{color:C.amber,fontSize:"10px"}}>⏳ W toku</span>
+                    :<span style={{color:C.borderPale,fontSize:"11px"}}>—</span>}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
-        <div style={{background:C.dyżurny+"55",borderTop:`1px solid ${C.gold}88`,padding:"8px 12px",display:"flex",alignItems:"center",gap:"14px"}}>
+        {/* TABLE FOOTER */}
+        <div style={{background:C.dyżurny+"55",borderTop:`1px solid ${C.gold}88`,padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <button onClick={addRow} style={{background:C.navyDark,border:`1px solid ${C.cyan}`,color:C.cyan,padding:"4px 14px",borderRadius:"4px",cursor:"pointer",fontSize:"12px",fontFamily:"inherit"}}>+ Dodaj wiersz</button>
-          <span style={{fontSize:"10px",color:C.textMid}}>System punktów: Zgłoszony +1 • W testach +3 • Standaryzacja +4 • Zaakceptowany +5</span>
+          <span style={{fontSize:"10px",color:C.textMute}}>© 2026 Piotr Mieczkowski. All rights reserved.</span>
         </div>
-      </div>
-      </div>
-
-      {/* PODIUM */}
-      <div style={{maxWidth:"1600px",margin:"12px auto 0",padding:"0 16px"}}>
-      <div style={{padding:"20px 16px 16px",background:C.cream1,border:`1px solid ${C.gold}66`,borderRadius:"8px",boxShadow:"0 2px 8px #0001"}}>
-        <div style={{textAlign:"center",color:C.navyDark,fontSize:"12px",fontWeight:"800",letterSpacing:"2px",marginBottom:"20px",borderBottom:`1px solid ${C.gold}44`,paddingBottom:"10px"}}>
-          🏆 RANKING MIESIĄCA — {MONTHS_PL[monthIdx].toUpperCase()} {year}
-        </div>
-
-        {podiumGroups.length===0?(
-          <div style={{textAlign:"center",color:C.textMute,padding:"24px",fontSize:"13px"}}>
-            Brak zaakceptowanych pomysłów w tym miesiącu.<br/>
-            <span style={{fontSize:"11px"}}>Zatwierdź pierwszy pomysł, aby pojawić się na podium!</span>
-          </div>
-        ):(
-          <>
-            <div style={{display:"flex",alignItems:"flex-end",justifyContent:"center",gap:"8px",marginBottom:"14px"}}>
-              {podiumDisplayOrder.map((groupIdx,displayPos)=>{
-                const group=podiumGroups[groupIdx];
-                const rank=groupIdx+1;
-                const rs=RANK_STYLES[rank]||RANK_STYLES[3];
-                const isFirst=rank===1;
-                return (
-                  <div key={rank} style={{width:isFirst?"190px":"155px",display:"flex",flexDirection:"column",alignItems:"center"}}>
-                    {group?(
-                      <>
-                        <div style={{fontSize:isFirst?"26px":"18px",marginBottom:"4px"}}>{rs.medal}</div>
-                        {group.people.map((entry,pi)=>(
-                          <div key={pi} style={{textAlign:"center",marginBottom:"3px"}}>
-                            <div style={{color:C.navyDark,fontWeight:"700",fontSize:isFirst?"13px":"11px",maxWidth:"185px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",justifyContent:"center",gap:"3px"}}>
-                              {entry.person} <Badge count={entry.accepted}/>
-                            </div>
-                            <div style={{color:C.textMid,fontSize:"10px"}}>{entry.accepted} zatw. • {entry.points} pkt</div>
-                          </div>
-                        ))}
-                        {group.people.length>1&&(
-                          <div style={{fontSize:"9px",color:rs.color,fontWeight:"700",marginBottom:"2px",letterSpacing:"1px"}}>= {rank}. MIEJSCE</div>
-                        )}
-                      </>
-                    ):(
-                      <div style={{height:isFirst?"58px":"44px"}}/>
-                    )}
-                    <div style={{
-                      width:"100%",height:`${rs.h}px`,
-                      background:group?rs.bg:"#ece7d0",
-                      border:`2px solid ${group?rs.color:C.borderPale}`,
-                      borderRadius:"6px 6px 0 0",
-                      display:"flex",alignItems:"center",justifyContent:"center",
-                      fontSize:isFirst?"42px":"30px",fontWeight:"900",
-                      color:group?rs.color+"aa":C.borderPale,
-                      boxShadow:isFirst&&group?`0 0 24px ${rs.color}55,inset 0 2px 0 ${rs.color}44`:"none",
-                    }}>{rank}</div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {belowPodium.length>0&&(
-              <div style={{maxWidth:"540px",margin:"0 auto",border:`1px solid ${C.borderPale}`,borderRadius:"6px",overflow:"hidden"}}>
-                {belowPodium.map((entry,i)=>{
-                  const baseRank=podiumGroups.slice(0,3).reduce((acc,g)=>acc+g.people.length,0)+i+1;
-                  return (
-                    <div key={entry.person} style={{display:"flex",alignItems:"center",gap:"10px",padding:"7px 14px",background:i%2===0?C.cream2:C.cream1,borderBottom:`1px solid ${C.borderPale}`}}>
-                      <span style={{color:C.textMute,fontWeight:"700",fontSize:"13px",width:"36px",textAlign:"right"}}>{baseRank}.</span>
-                      <span style={{color:C.textDark,fontSize:"12px",flex:1}}>{entry.person} <Badge count={entry.accepted}/></span>
-                      {entry.accepted>0
-                        ?<span style={{color:C.gold,fontSize:"11px",fontWeight:"600"}}>{entry.accepted} zatw.</span>
-                        :<span style={{color:C.textMute,fontSize:"10px",fontStyle:"italic"}}>brak zatw.</span>}
-                      <span style={{color:C.textMid,fontSize:"11px"}}>{entry.points} pkt</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
       </div>
       </div>
 
@@ -520,88 +329,80 @@ function App() {
       </div>
       </div>
 
-      {/* RANKING MODAL */}
-      {showRanking&&(
-        <div onClick={()=>setShowRanking(false)} style={{position:"fixed",inset:0,background:"#00000099",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}>
+      {/* STATYSTYKI MODAL */}
+      {showStats&&(
+        <div onClick={()=>setShowStats(false)} style={{position:"fixed",inset:0,background:"#00000099",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}>
           <div onClick={e=>e.stopPropagation()} style={{background:C.cream1,border:`2px solid ${C.gold}`,borderRadius:"12px",padding:"24px",maxWidth:"820px",width:"95%",maxHeight:"85vh",overflowY:"auto",boxShadow:"0 8px 40px #0005"}}>
+
+            {/* Modal header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"20px",borderBottom:`2px solid ${C.gold}`,paddingBottom:"12px"}}>
-              <div style={{color:C.navyDark,fontSize:"17px",fontWeight:"800",letterSpacing:"1px"}}>🏆 RANKING ROCZNY — {year}</div>
-              <button onClick={()=>setShowRanking(false)} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:"20px"}}>✕</button>
+              <div style={{color:C.navyDark,fontSize:"17px",fontWeight:"800",letterSpacing:"1px"}}>📊 STATYSTYKI POMYSŁÓW — {year}</div>
+              <button onClick={()=>setShowStats(false)} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:"20px"}}>✕</button>
             </div>
 
-            {/* Monthly table */}
-            <div style={{marginBottom:"24px"}}>
-              <div style={{color:C.navyMid,fontSize:"11px",letterSpacing:"2px",marginBottom:"8px",fontWeight:"700"}}>WYNIKI MIESIĘCZNE</div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px"}}>
-                <thead>
-                  <tr style={{background:C.navyMid}}>
-                    {["MIESIĄC","🥇 1. MIEJSCE","🥈 2. MIEJSCE","🥉 3. MIEJSCE","WYRÓŻNIENIA (pkt)"].map((h,i)=>(
-                      <th key={i} style={{padding:"8px 12px",textAlign:"left",color:i===0?"#d8d0c0":i===1?"#FFD700":i===2?"#e0e0e0":i===3?"#d4a060":"#8a9ab5",borderBottom:`2px solid ${C.gold}`,whiteSpace:"nowrap",fontSize:"11px"}}>{h}</th>
-                    ))}
+            {/* Monthly breakdown table */}
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px",marginBottom:"16px"}}>
+              <thead>
+                <tr style={{background:C.navyMid}}>
+                  <th style={{padding:"8px 12px",textAlign:"left",color:"#d8d0c0",borderBottom:`2px solid ${C.gold}`,width:"130px",fontSize:"10px",letterSpacing:"1.5px"}}>MIESIĄC</th>
+                  <th style={{padding:"8px 12px",textAlign:"center",color:"#d8d0c0",borderBottom:`2px solid ${C.gold}`,width:"70px",fontSize:"10px",letterSpacing:"1.5px"}}>OSÓB</th>
+                  <th style={{padding:"8px 12px",textAlign:"left",color:"#d8d0c0",borderBottom:`2px solid ${C.gold}`,fontSize:"10px",letterSpacing:"1.5px"}}>POMYSŁODAWCY</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyBreakdown.map((m,i)=>(
+                  <tr key={i} style={{background:i%2===0?C.cream1:C.cream2,borderBottom:`1px solid ${C.borderPale}`}}>
+                    <td style={{padding:"9px 12px",color:C.textDark,fontWeight:"600"}}>{m.name}</td>
+                    <td style={{padding:"9px 12px",textAlign:"center",fontWeight:"700",color:m.participants.length>0?C.green:C.textMute}}>
+                      {m.participants.length>0?m.participants.length:"—"}
+                    </td>
+                    <td style={{padding:"9px 12px"}}>
+                      {m.participants.length===0
+                        ?<span style={{fontStyle:"italic",color:C.textMute,fontSize:"11px"}}>— brak zgłoszeń —</span>
+                        :<span>
+                          {m.participants.map((p,pi)=>(
+                            <span key={pi}>
+                              <span style={{color:C.textDark,fontSize:"12px",fontWeight:"500"}}>{p.name}</span>
+                              {p.count>1&&<span style={{color:C.gold,fontSize:"10px",fontWeight:"700"}}> ×{p.count}</span>}
+                              {pi<m.participants.length-1&&<span style={{color:C.borderPale,margin:"0 5px"}}>•</span>}
+                            </span>
+                          ))}
+                        </span>
+                      }
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {monthlyBreakdown.map((m,i)=>(
-                    <tr key={i} style={{background:i%2===0?C.cream1:C.cream2,borderBottom:`1px solid ${C.borderPale}`}}>
-                      <td style={{padding:"7px 12px",color:C.textDark,fontWeight:"600"}}>{m.name}</td>
-                      {[0,1,2].map(pos=>(
-                        <td key={pos} style={{padding:"7px 12px",color:pos===0?"#b8860b":C.textMid}}>
-                          {m.top[pos]?`${m.top[pos].p} (${m.top[pos].c})`:"—"}
-                        </td>
-                      ))}
-                      <td style={{padding:"7px 12px",color:C.textMute,fontSize:"10px"}}>
-                        {m.participants.filter(p=>!m.top.find(t=>t.p===p.p)).slice(0,3).map(p=>`${p.p} +${p.c}pkt`).join(" • ")||"—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Annual summary */}
+            <div style={{padding:"12px 16px",background:C.cream2,borderRadius:"8px",border:`1px solid ${C.borderPale}`,display:"flex",gap:"28px",flexWrap:"wrap"}}>
+              <div style={{textAlign:"center"}}>
+                <div style={{color:C.navyDark,fontSize:"20px",fontWeight:"900"}}>
+                  {monthlyBreakdown.filter(m=>m.participants.length>0).length}
+                </div>
+                <div style={{color:C.textMute,fontSize:"10px",letterSpacing:"1px",marginTop:"2px"}}>AKTYWNE MIESIĄCE</div>
+              </div>
+              <div style={{width:"1px",background:C.borderPale}}/>
+              <div style={{textAlign:"center"}}>
+                <div style={{color:C.navyDark,fontSize:"20px",fontWeight:"900"}}>
+                  {new Set(monthlyBreakdown.flatMap(m=>m.participants.map(p=>p.name))).size}
+                </div>
+                <div style={{color:C.textMute,fontSize:"10px",letterSpacing:"1px",marginTop:"2px"}}>UNIKALNYCH OSÓB</div>
+              </div>
+              <div style={{width:"1px",background:C.borderPale}}/>
+              <div style={{textAlign:"center"}}>
+                <div style={{color:C.navyDark,fontSize:"20px",fontWeight:"900"}}>
+                  {monthlyBreakdown.reduce((acc,m)=>acc+m.participants.reduce((a,p)=>a+p.count,0),0)}
+                </div>
+                <div style={{color:C.textMute,fontSize:"10px",letterSpacing:"1px",marginTop:"2px"}}>ŁĄCZNIE POMYSŁÓW</div>
+              </div>
             </div>
 
-            {/* Annual ranking */}
-            {globalRanking.length>0?(
-              <div>
-                <div style={{color:C.navyMid,fontSize:"11px",letterSpacing:"2px",marginBottom:"8px",fontWeight:"700"}}>RANKING ROCZNY — PODSUMOWANIE KOŃCOWE</div>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px"}}>
-                  <thead>
-                    <tr style={{background:C.navyMid}}>
-                      {["POS.","PRACOWNIK","🥇 1. m-ce","🥈 2. m-ce","🥉 3. m-ce","ZAT. ŁĄCZNIE","PKT ŁĄCZNIE"].map((h,i)=>(
-                        <th key={i} style={{padding:"8px 12px",textAlign:i>1?"center":"left",color:"#d8d0c0",borderBottom:`2px solid ${C.gold}`,whiteSpace:"nowrap",fontSize:"10px",letterSpacing:"1px"}}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {globalRanking.map((e,i)=>(
-                      <tr key={e.person} style={{background:i===0?"#f0f8e8":i%2===0?C.cream1:C.cream2,borderBottom:`1px solid ${C.borderPale}`}}>
-                        <td style={{padding:"8px 12px",fontWeight:"700",fontSize:"14px",color:i===0?"#D4AF37":i===1?"#9a9a9a":i===2?"#b87333":C.textMute}}>
-                          {i===0?"🥇":i===1?"🥈":i===2?"🥉":`${i+1}.`}
-                        </td>
-                        <td style={{padding:"8px 12px",color:C.textDark,fontWeight:i<3?"700":"400"}}>{e.person}</td>
-                        <td style={{padding:"8px 12px",color:"#b8860b",textAlign:"center",fontWeight:"600"}}>{e.p1||"—"}</td>
-                        <td style={{padding:"8px 12px",color:C.textMid,textAlign:"center"}}>{e.p2||"—"}</td>
-                        <td style={{padding:"8px 12px",color:C.textMid,textAlign:"center"}}>{e.p3||"—"}</td>
-                        <td style={{padding:"8px 12px",color:C.gold,textAlign:"center",fontWeight:"700",fontSize:"14px"}}>{e.total}</td>
-                        <td style={{padding:"8px 12px",color:C.amber,textAlign:"center",fontWeight:"600"}}>{e.totalPts}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div style={{marginTop:"8px",padding:"8px 12px",background:C.cream2,borderRadius:"6px",fontSize:"10px",color:C.textMute}}>
-                  💡 Kolumna <strong>PKT ŁĄCZNIE</strong> uwzględnia punkty za każdy etap – doceniamy zaangażowanie, nie tylko finalne zatwierdzenie!
-                </div>
-                {monthIdx===11&&(
-                  <div style={{marginTop:"16px",padding:"12px 16px",background:"#e8f5e8",border:`1px solid ${C.green}`,borderRadius:"8px",textAlign:"center"}}>
-                    <div style={{color:C.green,fontSize:"14px",fontWeight:"800"}}>🎊 PRACOWNIK ROKU {year}: {globalRanking[0]?.person||"—"}</div>
-                    <div style={{color:C.textMid,fontSize:"11px",marginTop:"4px"}}>{globalRanking[0]?.p1} razy na 1. miejscu • {globalRanking[0]?.total} zatwierdzonych pomysłów • {globalRanking[0]?.totalPts} punktów łącznie</div>
-                  </div>
-                )}
-              </div>
-            ):(
-              <div style={{textAlign:"center",color:C.textMute,padding:"24px",fontSize:"13px"}}>Brak danych. Zaakceptuj pierwsze pomysły, aby zobaczyć ranking! 🚀</div>
-            )}
           </div>
         </div>
       )}
+
     </div>
   );
 }
