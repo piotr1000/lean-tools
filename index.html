@@ -517,16 +517,6 @@
         <div class="app-arrow">Otwórz →</div>
       </div>
 
-      <div class="app-card" data-app="kompetencje" onclick="openApp('kompetencje')">
-        <div class="app-icon-row">
-          <div class="app-icon" style="background: linear-gradient(135deg,#1a5a2a,#0d3a1a);">KOM</div>
-          <span class="app-status">Aktywna</span>
-        </div>
-        <div class="app-name">Matryca Kompetencji</div>
-        <div class="app-desc">Matryca umiejętności zespołu — poziomy 0–4, śledzenie rozwoju pracowników</div>
-        <div class="app-arrow">Otwórz →</div>
-      </div>
-
       <div class="app-card" data-app="kaizen" onclick="openApp('kaizen')">
         <div class="app-icon-row">
           <div class="app-icon" style="background: linear-gradient(135deg,#8a6a0a,#5a4008);">KAI</div>
@@ -548,23 +538,19 @@
 
 <script>
   // ── CREDENTIALS ──
-  // rola: 'zarzad' = wszystkie 4 tablice, 'pracownik' = 3 tablice (bez Matrycy)
   const USERS = {
-    "Unisystem": { haslo: "Lean2026!",  rola: "zarzad"    },
-    "Pracownik":  { haslo: "Team2026!", rola: "pracownik" }
+    "Unisystem": { haslo: "Lean2026!", rola: "zarzad" }
   };
   const ROLE_APPS = {
-    zarzad:    ['sqdp','kamishibai','kompetencje','kaizen'],
-    pracownik: ['sqdp','kamishibai','kaizen']
+    zarzad: ['sqdp','kamishibai','kaizen']
   };
   let currentRole = null;
 
-  // ── APP LINKS (uzupełnij gdy aplikacje będą gotowe) ──
+  // ── APP LINKS ──
   const APPS = {
-    sqdp:        'https://lean-tools-one.vercel.app/sqdp.html',   // docelowo: URL do tablicy SQDP
-    kamishibai:  'https://lean-tools-one.vercel.app/kamishibai.html',   // docelowo: URL do Kamishibai
-    kompetencje: 'https://lean-tools-one.vercel.app/kompetencje.html',   // docelowo: URL do tablicy kompetencji
-    kaizen:      'https://lean-tools-one.vercel.app/kaizen.html'    // docelowo: URL do tablicy Kaizen
+    sqdp:       'https://lean-tools-one.vercel.app/sqdp.html',
+    kamishibai: 'https://lean-tools-one.vercel.app/kamishibai.html',
+    kaizen:     'https://lean-tools-one.vercel.app/kaizen.html'
   };
 
   function doLogin() {
@@ -587,8 +573,7 @@
       });
 
       // Etykieta roli
-      document.getElementById('roleBadge').textContent =
-        currentRole === 'zarzad' ? '👔 Zarząd' : '👷 Pracownik';
+      document.getElementById('roleBadge').textContent = '👔 Zarząd';
     } else {
       err.style.display = 'block';
     }
