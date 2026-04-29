@@ -8,6 +8,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>
   const SUPABASE_URL = 'https://hyisabnvzrdplnucwfeh.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_SXzGVMnJ8cJE-pmcGLgyTg_iL6PI66h';
@@ -1760,6 +1763,321 @@ const HIST_UNISYSTEM = (() => {
   return rows;
 })();
 
+// ─── EXPORT EXCEL (ExcelJS — formatowany) ─────────────────────────────────────
+async function exportExcelFormatted(summLine, allRows, extraCols, getCell, getBledyForMonth, parseWysylki){
+  if(!window.ExcelJS){ alert('Biblioteka ExcelJS nie załadowana — odśwież stronę.'); return; }
+  const wb = new window.ExcelJS.Workbook();
+  wb.creator='SQDP App'; wb.created=new Date();
+  const now=new Date(); const year=now.getFullYear();
+
+  const ws = wb.addWorksheet(summLine.substring(0,31),{
+    pageSetup:{paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0}
+  });
+
+  const cols=[
+    {header:'Rok',width:7},{header:'Miesiąc',width:13},
+    {header:'Wydania\npoz.',width:13},{header:'Wydania\ndok.',width:13},
+    {header:'Pomyłki',width:10},{header:'Poprawność\nwydań %',width:16},
+    {header:'Wysyłki\nPL/EX',width:13},{header:'Nieterminowe',width:13},
+    {header:'Poprawność\nwysyłek %',width:17},
+    {header:'Błędy na\nProdukcję',width:15},{header:'Błędy do\nklienta',width:14},
+    ...extraCols.map(c=>({header:c.label.replace(/\n/g,' '),width:Math.max(c.label.length+4,14)})),
+  ];
+  ws.columns=cols.map(c=>({header:c.header,width:c.width}));
+
+  const HDR_COLORS=['FF1E293B','FF1E293B','FF064E3B','FF064E3B','FF7F1D1D','FF065F46',
+    'FF1E3A8A','FF7F1D1D','FF065F46','FF78350F','FF7F1D1D'];
+
+  const hRow=ws.getRow(1); hRow.height=44;
+  cols.forEach((col,ci)=>{
+    const cell=ws.getCell(1,ci+1);
+    cell.value=col.header;
+    cell.font={name:'Calibri',size:9,bold:true,color:{argb:'FFFFFFFF'}};
+    cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:HDR_COLORS[ci]||'FF1E293B'}};
+    cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+    cell.border={bottom:{style:'medium',color:{argb:'FF334155'}},right:{style:'thin',color:{argb:'FF475569'}}};
+  });
+
+  function pctColor(v){
+    const n=parseFloat(v);
+    if(isNaN(n)||v===null) return {fill:'FFFFFFFF',font:{argb:'FF94A3B8'}};
+    if(n>=99)  return {fill:'FFD1FAE5',font:{argb:'FF059669'}};
+    if(n>=95)  return {fill:'FFFEF3C7',font:{argb:'FFD97706'}};
+    return        {fill:'FFFEE2E2',font:{argb:'FFDC2626'}};
+  }
+
+  allRows.forEach((row,ri)=>{
+    const bg=ri%2===0?'FFF8FAFC':'FFFFFFFF';
+    const pozRaw=getCell(row.key,'wyd_poz')||(row.wyd_poz!=null?String(row.wyd_poz):'');
+    const pomRaw=getCell(row.key,'pomylki')||(row.pomylki!=null?String(row.pomylki):'0');
+    const poz=parseFloat(pozRaw); const pom=parseFloat(pomRaw??0);
+    const qPct=(!poz||isNaN(poz))?null:(poz-(isNaN(pom)?0:pom))/poz*100;
+    const wysRaw=getCell(row.key,'wysylki');
+    const nitRaw=getCell(row.key,'nieterminowe');
+    const wys=parseWysylki(wysRaw||''); const nit=parseFloat(nitRaw||0);
+    const dPct=(!isNaN(wys)&&wys>0)?(wys-(isNaN(nit)?0:nit))/wys*100:null;
+    const b=getBledyForMonth(summLine,row.year,row.month);
+
+    const vals=[
+      row.year, MONTHS_PL[row.month],
+      parseFloat(pozRaw)||null, parseFloat(getCell(row.key,'wyd_dok'))||null,
+      pom||0, qPct,
+      wysRaw||null, nit||0, dPct,
+      b.bledy_prod, b.bledy_klient,
+      ...extraCols.map(c=>getCell(row.key,c.id)||null),
+    ];
+
+    const dr=ws.getRow(ri+2); dr.height=22;
+    vals.forEach((val,ci)=>{
+      const cell=dr.getCell(ci+1);
+      cell.alignment={horizontal:'center',vertical:'middle'};
+      cell.border={bottom:{style:'thin',color:{argb:'FFE2E8F0'}},right:{style:'thin',color:{argb:'FFE2E8F0'}}};
+
+      if(ci===5||ci===8){
+        const pc=pctColor(val);
+        if(val!==null){cell.value=val/100;cell.numFmt='0.00%';}
+        else cell.value='–';
+        cell.font={name:'Calibri',size:10,bold:val!==null,color:{argb:pc.font.argb||'FF94A3B8'}};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:val!==null?pc.fill:bg}};
+      } else if(ci===9||ci===10){
+        const n=val||0; const hasBug=n>0;
+        cell.value=n;
+        cell.font={name:'Calibri',size:10,bold:hasBug,color:{argb:hasBug?(ci===9?'FFD97706':'FFDC2626'):'FF059669'}};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:hasBug?(ci===9?'FFFEF3C7':'FFFEE2E2'):'FFD1FAE5'}};
+      } else if(ci===4||ci===7){
+        const n=parseFloat(val)??0;
+        cell.value=isNaN(n)?0:n;
+        cell.font={name:'Calibri',size:10,bold:n>0,color:{argb:n>0?'FFDC2626':'FF475569'}};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}};
+      } else {
+        cell.value=val;
+        cell.font={name:'Calibri',size:10,bold:ci<2,color:{argb:'FF1E293B'}};
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}};
+      }
+    });
+  });
+
+  // Wiersz sumaryczny
+  let tPoz=0,tPom=0,cPoz=0,tWys=0,tNit=0,cWys=0,tProd=0,tKli=0;
+  allRows.forEach(row=>{
+    const poz=parseFloat(getCell(row.key,'wyd_poz')||row.wyd_poz||0);
+    const pom=parseFloat(getCell(row.key,'pomylki')||row.pomylki||0);
+    if(poz>0){tPoz+=poz;tPom+=pom;cPoz++;}
+    const wys=parseWysylki(getCell(row.key,'wysylki')||'');
+    const nit=parseFloat(getCell(row.key,'nieterminowe')||0);
+    if(!isNaN(wys)&&wys>0){tWys+=wys;tNit+=nit;cWys++;}
+    const b=getBledyForMonth(summLine,row.year,row.month);
+    tProd+=b.bledy_prod; tKli+=b.bledy_klient;
+  });
+  const sumQ=cPoz>0?(tPoz-tPom)/tPoz*100:null;
+  const sumD=cWys>0?(tWys-tNit)/tWys*100:null;
+  const si=allRows.length+2;
+  const sr=ws.getRow(si); sr.height=30;
+
+  ws.mergeCells(si,1,si,2);
+  const lc=sr.getCell(1);
+  lc.value=`📊 WYNIK ROCZNY ${year}`;
+  lc.font={name:'Calibri',size:11,bold:true,color:{argb:'FFFFFFFF'}};
+  lc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F172A'}};
+  lc.alignment={horizontal:'right',vertical:'middle'};
+
+  [[3,'FF0F172A'],[4,'FF0F172A'],[5,'FF0F172A']].forEach(([ci,bg])=>{
+    sr.getCell(ci).fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}};
+  });
+
+  const qc=sr.getCell(6);
+  const pcQ=pctColor(sumQ);
+  if(sumQ!==null){qc.value=sumQ/100;qc.numFmt='0.00%';}else qc.value='–';
+  qc.font={name:'Calibri',size:13,bold:true,color:{argb:pcQ.font.argb}};
+  qc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF052E16'}};
+  qc.alignment={horizontal:'center',vertical:'middle'};
+
+  sr.getCell(7).value=tWys||'–';
+  sr.getCell(7).font={name:'Calibri',size:10,color:{argb:'FF94A3B8'}};
+  sr.getCell(7).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F172A'}};
+  sr.getCell(7).alignment={horizontal:'center',vertical:'middle'};
+  sr.getCell(8).value=tNit||0;
+  sr.getCell(8).font={name:'Calibri',size:10,bold:tNit>0,color:{argb:tNit>0?'FFFCA5A5':'FF94A3B8'}};
+  sr.getCell(8).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F172A'}};
+  sr.getCell(8).alignment={horizontal:'center',vertical:'middle'};
+
+  const dc=sr.getCell(9);
+  const pcD=pctColor(sumD);
+  if(sumD!==null){dc.value=sumD/100;dc.numFmt='0.00%';}else dc.value='–';
+  dc.font={name:'Calibri',size:13,bold:true,color:{argb:pcD.font.argb}};
+  dc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF052E16'}};
+  dc.alignment={horizontal:'center',vertical:'middle'};
+
+  [[10,tProd,'FFD97706'],[11,tKli,'FFDC2626']].forEach(([ci,val,fc])=>{
+    const c=sr.getCell(ci);
+    c.value=val; c.font={name:'Calibri',size:12,bold:true,color:{argb:val>0?fc:'FF6EE7B7'}};
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F172A'}};
+    c.alignment={horizontal:'center',vertical:'middle'};
+  });
+  extraCols.forEach((_,i)=>{
+    sr.getCell(12+i).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0F172A'}};
+  });
+
+  ws.views=[{state:'frozen',xSplit:2,ySplit:1}];
+
+  // Arkusz Info
+  const wsI=wb.addWorksheet('Info'); wsI.getColumn(1).width=72;
+  [
+    {t:`SQDP — ${summLine} — Raport ${year}`,s:14,b:true},
+    {t:`Wygenerowano: ${now.toLocaleString('pl-PL')}`,s:9,i:true},
+    {t:''},
+    {t:'Legenda kolorów:',s:11,b:true},
+    {t:'Zielone tło = wynik ≥ 99% (cel osiągnięty)'},
+    {t:'Żółte tło = wynik 95–99% (uwaga)'},
+    {t:'Czerwone tło = wynik < 95% (poniżej celu)'},
+    {t:''},
+    {t:'Wzory:',s:11,b:true},
+    {t:'Poprawność wydań % = (Wydania poz. − Pomyłki) / Wydania poz. × 100%'},
+    {t:'Poprawność wysyłek % = (Wysyłki − Nieterminowe) / Wysyłki łącznie × 100%'},
+    {t:'Wysyłki PL/EX: "14/170" = 14 PL + 170 EX = 184 łącznie'},
+  ].forEach(({t,s,b,i},ri)=>{
+    wsI.getRow(ri+1).getCell(1).value=t||'';
+    wsI.getRow(ri+1).getCell(1).font={name:'Calibri',size:s||10,bold:!!b,italic:!!i};
+  });
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`SQDP_${summLine}_${year}.xlsx`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── EXPORT PDF ───────────────────────────────────────────────────────────────
+async function exportPDF(summLine,allRows,extraCols,getCell,getBledyForMonth,parseWysylki){
+  if(!window.jspdf){alert('Biblioteka PDF nie załadowana — odśwież stronę.');return;}
+  const {jsPDF}=window.jspdf;
+  const now=new Date(); const year=now.getFullYear();
+  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+
+  // Nagłówek
+  pdf.setFontSize(13); pdf.setFont('helvetica','bold');
+  pdf.setTextColor(15,23,42);
+  pdf.text(`SQDP \u2014 ${summLine} \u2014 Raport ${year}`,14,13);
+  pdf.setFontSize(7); pdf.setFont('helvetica','normal');
+  pdf.setTextColor(100,116,139);
+  pdf.text(`Wygenerowano: ${now.toLocaleString('pl-PL')}`,14,19);
+
+  function pctRGB(v){
+    if(v===null||v==='–') return [148,163,184];
+    const n=parseFloat(v);
+    if(n>=99) return [5,150,105];
+    if(n>=95) return [217,119,6];
+    return [220,38,38];
+  }
+
+  const headers=['Rok','Miesiąc','Wyd.\npoz.','Pom.','Popr.\nwydań %',
+    'Wysyłki\nPL/EX','Nieter.','Popr.\nwysył. %','Błędy\nProd.','Błędy\nKlien.',
+    ...extraCols.map(c=>c.label.replace(/\n/g,' '))];
+
+  const bodyRows=allRows.map(row=>{
+    const pozRaw=getCell(row.key,'wyd_poz')||(row.wyd_poz!=null?String(row.wyd_poz):'');
+    const pomRaw=getCell(row.key,'pomylki')||(row.pomylki!=null?String(row.pomylki):'0');
+    const poz=parseFloat(pozRaw); const pom=parseFloat(pomRaw??0);
+    const qPct=(!poz||isNaN(poz))?null:(poz-(isNaN(pom)?0:pom))/poz*100;
+    const wysRaw=getCell(row.key,'wysylki');
+    const nitRaw=getCell(row.key,'nieterminowe');
+    const wys=parseWysylki(wysRaw||''); const nit=parseFloat(nitRaw||0);
+    const dPct=(!isNaN(wys)&&wys>0)?(wys-(isNaN(nit)?0:nit))/wys*100:null;
+    const b=getBledyForMonth(summLine,row.year,row.month);
+    return[row.year,MONTHS_PL[row.month],
+      pozRaw||'–', isNaN(pom)?0:pom,
+      qPct!==null?`${qPct.toFixed(2)}%`:'–',
+      wysRaw||'–', isNaN(nit)?0:nit,
+      dPct!==null?`${dPct.toFixed(2)}%`:'–',
+      b.bledy_prod, b.bledy_klient,
+      ...extraCols.map(c=>getCell(row.key,c.id)||'–')];
+  });
+
+  // Wiersz sumaryczny
+  let tPoz=0,tPom=0,cPoz=0,tWys=0,tNit=0,cWys=0;
+  allRows.forEach(row=>{
+    const poz=parseFloat(getCell(row.key,'wyd_poz')||row.wyd_poz||0);
+    const pom=parseFloat(getCell(row.key,'pomylki')||row.pomylki||0);
+    if(poz>0){tPoz+=poz;tPom+=pom;cPoz++;}
+    const wys=parseWysylki(getCell(row.key,'wysylki')||'');
+    const nit=parseFloat(getCell(row.key,'nieterminowe')||0);
+    if(!isNaN(wys)&&wys>0){tWys+=wys;tNit+=nit;cWys++;}
+  });
+  const sumQ=cPoz>0?(tPoz-tPom)/tPoz*100:null;
+  const sumD=cWys>0?(tWys-tNit)/tWys*100:null;
+
+  const footRow=[
+    {content:`WYNIK ROCZNY ${year}`,colSpan:4,
+      styles:{halign:'right',fontStyle:'bold',textColor:[255,255,255],fillColor:[15,23,42]}},
+    {content:sumQ!==null?`${sumQ.toFixed(2)}%`:'–',
+      styles:{fontStyle:'bold',textColor:pctRGB(sumQ),fillColor:[5,46,22]}},
+    {content:tWys>0?String(tWys):'–',styles:{textColor:[148,163,184],fillColor:[15,23,42]}},
+    {content:tNit>0?String(tNit):'0',
+      styles:{textColor:tNit>0?[252,165,165]:[148,163,184],fillColor:[15,23,42]}},
+    {content:sumD!==null?`${sumD.toFixed(2)}%`:'–',
+      styles:{fontStyle:'bold',textColor:pctRGB(sumD),fillColor:[5,46,22]}},
+    {content:'',styles:{fillColor:[15,23,42]}},
+    {content:'',styles:{fillColor:[15,23,42]}},
+    ...extraCols.map(()=>({content:'',styles:{fillColor:[15,23,42]}})),
+  ];
+
+  pdf.autoTable({
+    startY:23,
+    head:[headers],
+    body:bodyRows,
+    foot:[footRow],
+    theme:'grid',
+    headStyles:{fillColor:[15,23,42],textColor:[255,255,255],fontSize:7,
+      fontStyle:'bold',halign:'center',valign:'middle',minCellHeight:12,cellPadding:2},
+    bodyStyles:{fontSize:8,halign:'center',valign:'middle',cellPadding:2},
+    footStyles:{fontSize:8,cellPadding:2},
+    alternateRowStyles:{fillColor:[248,250,252]},
+    columnStyles:{
+      0:{cellWidth:12},1:{cellWidth:18,halign:'left'},
+      2:{cellWidth:18},3:{cellWidth:11},4:{cellWidth:22},
+      5:{cellWidth:18},6:{cellWidth:12},7:{cellWidth:22},
+      8:{cellWidth:15},9:{cellWidth:14},
+    },
+    didParseCell(data){
+      if(data.section==='head'){
+        const HC={3:[127,29,29],4:[6,79,58],5:[30,58,138],
+          6:[127,29,29],7:[6,79,58],8:[120,53,15],9:[127,29,29]};
+        if(HC[data.column.index]) data.cell.styles.fillColor=HC[data.column.index];
+      }
+      if(data.section==='body'){
+        const v=data.cell.raw;
+        if(data.column.index===4||data.column.index===7){
+          const n=parseFloat(v);
+          if(!isNaN(n)){
+            data.cell.styles.textColor=pctRGB(n);
+            data.cell.styles.fontStyle='bold';
+            if(n>=99) data.cell.styles.fillColor=[209,250,229];
+            else if(n>=95) data.cell.styles.fillColor=[254,243,199];
+            else data.cell.styles.fillColor=[254,226,226];
+          }
+        }
+        if((data.column.index===3||data.column.index===6)&&parseFloat(v)>0){
+          data.cell.styles.textColor=[220,38,38];data.cell.styles.fontStyle='bold';
+        }
+        if(data.column.index===8){
+          const n=parseFloat(v);
+          if(!isNaN(n)&&n>0){data.cell.styles.textColor=[217,119,6];data.cell.styles.fontStyle='bold';data.cell.styles.fillColor=[254,243,199];}
+          else data.cell.styles.textColor=[5,150,105];
+        }
+        if(data.column.index===9){
+          const n=parseFloat(v);
+          if(!isNaN(n)&&n>0){data.cell.styles.textColor=[220,38,38];data.cell.styles.fontStyle='bold';data.cell.styles.fillColor=[254,226,226];}
+          else data.cell.styles.textColor=[5,150,105];
+        }
+      }
+    },
+    margin:{top:8,right:8,bottom:8,left:8},
+  });
+
+  pdf.save(`SQDP_${summLine}_${year}.pdf`);
+}
+
 // ─── SUMMARY SCREEN ───────────────────────────────────────────────────────────
 function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, setExtraData, issues, locations, onSaveCell}) {
   const now = new Date();
@@ -1821,22 +2139,22 @@ function calcKpiFromEntries(line, year, month) {
     return rows;
   })();
 
-  // For a row, get the effective S/Q/D/P — prefer live data if available
+// For a row, get the effective S/Q/D/P — Q i D TYLKO ze wzoru, nigdy z kółka
   function getKpi(row) {
     const live = calcKpiFromEntries(summLine, row.year, row.month);
     const qFormula = calcPoprawnoscForRow(row);
     const dFormula = calcPoprawnosc2(row);
 
     if (live) {
-      const Q = qFormula !== null ? qFormula : live.Q;
-      const D = dFormula !== null ? dFormula : live.D;
+      const Q = qFormula !== null ? qFormula : null;  // null = brak danych ręcznych
+      const D = dFormula !== null ? dFormula : null;  // null = brak danych ręcznych
       const vals = [live.S, Q, D, live.P].filter(v => v !== null);
       const razem = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10000)/10000 : null;
       return {...live, Q, D, razem};
     }
     if (row.S !== null) {
-      const Q = qFormula !== null ? qFormula : row.Q;
-      const D = dFormula !== null ? dFormula : row.D;
+      const Q = qFormula !== null ? qFormula : null;
+      const D = dFormula !== null ? dFormula : null;
       const vals = [row.S, Q, D, row.P].filter(v => v !== null);
       const razem = vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10000)/10000 : null;
       return {S:row.S, Q, D, P:row.P, razem};
@@ -1928,11 +2246,22 @@ function getBledyForMonth(lineName, year, month){
     return {bledy_prod, bledy_klient};
   }
 
+// Helper: parsuje "14/170" → 184, lub zwykłą liczbę → number
+  function parseWysylki(raw) {
+    if (!raw && raw !== 0) return NaN;
+    const str = String(raw).trim();
+    if (str.includes('/')) {
+      const parts = str.split('/').map(p => parseFloat(p.trim())).filter(n => !isNaN(n));
+      return parts.length ? parts.reduce((a, b) => a + b, 0) : NaN;
+    }
+    return parseFloat(str);
+  }
+
   // Poprawność wysyłek = (wysylki - nieterminowe) / wysylki × 100%
   function calcPoprawnosc2(row){
     const wysVal = getCell(row.key,'wysylki');
     const nitVal = getCell(row.key,'nieterminowe');
-    const wys = parseFloat(wysVal);
+    const wys = parseWysylki(wysVal);   // <-- zmiana: sumuje PL + EX
     const nit = parseFloat(nitVal ?? 0);
     if(!wys || isNaN(wys)) return null;
     return (wys - (isNaN(nit)?0:nit)) / wys;
@@ -2011,16 +2340,25 @@ function getBledyForMonth(lineName, year, month){
         <span style={{color:'rgba(255,255,255,0.4)',fontSize:'0.8125rem',marginLeft:'0.5rem'}}>
           📊 Podsumowanie roczne
         </span>
-        <button onClick={onBoard}
-          style={{marginLeft:'auto',background:'rgba(255,255,255,0.08)',
-            border:'1px solid rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.7)',
-            borderRadius:'0.5rem',padding:'0.375rem 0.875rem',fontSize:'0.75rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
-          ← Wróć do tablicy
-        </button>
+        <div style={{marginLeft:'auto',display:'flex',gap:'0.5rem',alignItems:'center'}}>
+          <button
+            onClick={()=>exportExcelFormatted(summLine,allRows,extraCols,getCell,getBledyForMonth,parseWysylki)}
+            style={{background:'rgba(16,185,129,0.18)',border:'1px solid rgba(16,185,129,0.45)',
+              color:'#6ee7b7',borderRadius:'0.5rem',padding:'0.375rem 0.875rem',
+              fontSize:'0.75rem',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+            📥 Excel
+          </button>
+          <button onClick={onBoard}
+            style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',
+              color:'rgba(255,255,255,0.7)',borderRadius:'0.5rem',padding:'0.375rem 0.875rem',
+              fontSize:'0.75rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+            ← Wróć do tablicy
+          </button>
+        </div>
       </div>
 
       {/* Main content */}
-      <div style={{flex:1,overflowY:'auto',padding:'1.25rem 1.25rem 1.5rem'}}>
+      <div id="sqdp-summary-content" style={{flex:1,overflowY:'auto',padding:'1.25rem 1.25rem 1.5rem'}}>
         {/* Title */}
         <div style={{marginBottom:'1.25rem'}}>
           <h2 style={{margin:0,fontSize:'1.25rem',fontWeight:900,color:'#0f172a'}}>
@@ -2033,7 +2371,7 @@ function getBledyForMonth(lineName, year, month){
         </div>
 
         {/* Table */}
-        <div style={{overflowX:'auto',background:'white',borderRadius:'1.0rem',
+        <div id="sqdp-report-table" style={{overflowX:'auto',background:'white',borderRadius:'1.0rem',
           boxShadow:'0 2px 12px rgba(0,0,0,0.07)',border:'1px solid #e2e8f0'}}>
           <table style={{borderCollapse:'collapse',width:'100%',minWidth:'56.25rem'}}>
             <thead>
@@ -2337,16 +2675,17 @@ function getBledyForMonth(lineName, year, month){
                   const poz=parseFloat(getCell(row.key,'wyd_poz')||row.wyd_poz||0);
                   const pom=parseFloat(getCell(row.key,'pomylki')||row.pomylki||0);
                   if(poz>0){totalPoz+=poz;totalPom+=pom;countPoz++;}
-                  const wys=parseFloat(getCell(row.key,'wysylki')||0);
+                  const wys=parseWysylki(getCell(row.key,'wysylki')||'');  // sumuje PL+EX
                   const nit=parseFloat(getCell(row.key,'nieterminowe')||0);
-                  if(wys>0){totalWys+=wys;totalNit+=nit;countWys++;}
+                  if(!isNaN(wys)&&wys>0){totalWys+=wys;totalNit+=nit;countWys++;}
                 });
                 const resultQ = countPoz>0?(totalPoz-totalPom)/totalPoz*100:null;
                 const resultD = countWys>0?(totalWys-totalNit)/totalWys*100:null;
 
                 function getColor(result,target){
                   if(result===null) return '#94a3b8';
-                  if(isYearEnd) return result>=target?'#059669':'#dc2626';
+                  if(result >= target) return '#059669';  // zielony — cel osiągnięty
+                  if(isYearEnd) return '#dc2626';
                   return '#d97706';
                 }
 
@@ -2488,9 +2827,9 @@ function getBledyForMonth(lineName, year, month){
                     const pom=parseFloat(getCell(row.key,field_pom)||row.pomylki||0);
                     if(poz>0){totalPoz+=poz;totalPom+=pom;countWyd++;}
                   } else {
-                    const wys=parseFloat(getCell(row.key,field_wys)||0);
+                    const wys=parseWysylki(getCell(row.key,field_wys)||'');  // sumuje PL+EX
                     const nit=parseFloat(getCell(row.key,field_nit)||0);
-                    if(wys>0){totalWys+=wys;totalNit+=nit;countWys++;}
+                    if(!isNaN(wys)&&wys>0){totalWys+=wys;totalNit+=nit;countWys++;}
                   }
                 });
                 if(mode==='wydania') return countWyd>0?(totalPoz-totalPom)/totalPoz*100:null;
@@ -2502,13 +2841,15 @@ function getBledyForMonth(lineName, year, month){
 
               function resultColor(result, target){
                 if(result===null) return '#94a3b8';
-                if(isYearEnd) return result>=target?'#059669':'#dc2626';
-                return '#d97706'; // w trakcie roku — pomarańczowy
+                if(result >= target) return '#059669';  // zielony — cel osiągnięty w dowolnym momencie
+                if(isYearEnd) return '#dc2626';         // czerwony — koniec roku, poniżej celu
+                return '#d97706';                       // pomarańczowy — w trakcie roku, poniżej celu
               }
               function resultLabel(result, target){
                 if(result===null) return '–';
-                if(isYearEnd) return result>=target?'✅ Cel osiągnięty':'❌ Cel nieosiągnięty';
-                return '⏳ W trakcie roku';
+                if(result >= target) return '✅ Cel osiągnięty';
+                if(isYearEnd) return '❌ Cel nieosiągnięty';
+                return '⏳ Poniżej celu';
               }
 
               return(
@@ -2566,8 +2907,8 @@ function getBledyForMonth(lineName, year, month){
                     </div>
                   </div>
                   <div style={{fontSize:'0.625rem',color:'#92400e',lineHeight:1.5}}>
-                    ⏳ Pomarańczowy = w trakcie roku<br/>
-                    ✅ Zielony = cel osiągnięty (31 XII)<br/>
+                    ✅ Zielony = wynik ≥ celu (w każdym momencie)<br/>
+                    ⏳ Pomarańczowy = poniżej celu, rok trwa<br/>
                     ❌ Czerwony = cel nieosiągnięty (31 XII)<br/>
                     Wynik liczony jako średnia ważona wszystkich miesięcy.
                   </div>
