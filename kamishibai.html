@@ -702,25 +702,20 @@ const saveNoteToSupabase = useCallback(async (key, note) => {
     }, { onConflict: 'year,month,card_key' });
 }, [year, month]);
 
-  /* ── Update cell with auto-ocena ── */
-const updateCell = useCallback((di, si, field, val) => {
-  setCells(prev => {
-    const key  = `${di}_${si}`;
-    const old  = prev[key];
-    const upd  = { ...old, [field]: val };
-    if (field === 'uwagi' || field === 'termin') {
-      const uwagi  = field === 'uwagi'  ? val : old.uwagi;
-      const termin = field === 'termin' ? val : old.termin;
-      if (!uwagi.trim()) {
-        upd.ocena = old.uwagi.trim() ? 'green' : old.ocena;
-      } else {
-        upd.ocena = computeOcena(uwagi, termin);
-      }
-    }
-    saveCardToSupabase(di, si, upd);
-    return { ...prev, [key]: upd };
-  });
-}, [saveCardToSupabase]);
+/* ── Update cell with auto-ocena ── */
+  const updateCell = useCallback((di, si, field, val) => {
+    setCells(prev => {
+      const key      = `${di}_${si}`;
+      const old      = prev[key];
+      const upd      = { ...old, [field]: val };
+      const uwagi    = field === 'uwagi'    ? val : old.uwagi;
+      const termin   = field === 'termin'   ? val : old.termin;
+      const wykonane = field === 'wykonane' ? val : (old.wykonane || false);
+      upd.ocena = computeOcena(uwagi, termin, wykonane);
+      saveCardToSupabase(di, si, upd);
+      return { ...prev, [key]: upd };
+    });
+  }, [saveCardToSupabase]);
 
 const updateStatsNote = useCallback((key, val) => {
   setStatsNotes(prev => ({ ...prev, [key]: val }));
@@ -884,15 +879,11 @@ const updateStatsNote = useCallback((key, val) => {
                 <th className="th-base" colSpan={2}>Dzień</th>
                 {['o1','o2','o3','o4'].map(k => (
                   <th key={k} className="th-area">
-                    <AreaHeader value={areaLabels[k]} onChange={v => {
-                  const updated = { ...areaLabels, [k]: v };
-                  setAreaLabels(updated);
-                  saveConfigToSupabase(updated, dyzurny);
-                }} />
+                    <AreaHeader value={areaLabels[k]} onChange={v => setAreaLabels(p=>({...p,[k]:v}))} />
                   </th>
                 ))}
                 <th className="th-base">Uwagi</th>
-                <th className="th-base" title="Zaznacz gdy wykonane">✓</th>
+                <th className="th-base th-cb" title="Zaznacz gdy wykonane — kółko zmieni się na zielone">✓</th>
                 <th className="th-base">Działania</th>
                 <th className="th-base">Kto</th>
                 <th className="th-base">Ocena</th>
