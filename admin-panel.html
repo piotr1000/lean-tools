@@ -1098,9 +1098,13 @@ let editingCompanyId = null;
 // ── ŁADOWANIE DANYCH Z SUPABASE ──
 async function loadAll() {
   setLoading(true);
-  companies = await db.get('companies', 'order=created_at.desc');
-  users     = await db.get('users', 'order=created_at.desc');
-  activity  = await db.get('activity_log', 'order=created_at.desc&limit=50');
+  const c = await db.get('companies', 'order=created_at.desc');
+  const u = await db.get('users', 'order=created_at.desc');
+  const a = await db.get('activity_log', 'order=created_at.desc&limit=50');
+  companies = Array.isArray(c) ? c : [];
+  users     = Array.isArray(u) ? u : [];
+  activity  = Array.isArray(a) ? a : [];
+  if (!Array.isArray(c)) console.error('companies error:', c);
   setLoading(false);
   renderCompanies();
   renderUsers();
