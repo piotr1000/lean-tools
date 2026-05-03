@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQDP — Super Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy:    #0f1117;
+  --navy2:   #1a1d2e;
+  --navy3:   #252840;
+  --navy4:   #2e3254;
+  --accent:  #e8c84a;
+  --accent2: #f0a500;
+  --green:   #27ae60;
+  --red:     #c0392b;
+  --blue:    #2980b9;
+  --orange:  #e67e22;
+  --text:    #f0ede8;
+  --text2:   #9a9890;
+  --text3:   #5a5855;
+  --border:  rgba(255,255,255,0.07);
+  --sidebar: 240px;
+}
+
+html, body {
+  min-height: 100vh;
+  font-family: 'DM Sans', sans-serif;
+  background: var(--navy);
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(232,200,74,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232,200,74,0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none; z-index: 0;
+}
+
+/* ── LAYOUT ── */
+.app { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+
+/* ── SIDEBAR ── */
+.sidebar {
+  width: var(--sidebar);
+  background: var(--navy2);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  position: fixed; top: 0; left: 0; bottom: 0;
+  z-index: 100;
+}
+
+.sidebar-logo {
+  padding: 1.5rem 1.25rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.logo-mark {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 4px;
+}
+.logo-sq {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--accent); color: var(--navy);
+  font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500;
+  display: flex; align-items: center; justify-content: center; letter-spacing: 0;
+}
+.logo-name { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+.logo-sub { font-size: 10px; color: var(--text3); font-family: 'DM Mono', monospace; letter-spacing: 0.08em; text-transform: uppercase; padding-left: 40px; }
+
+.sidebar-section { padding: 1rem 0; flex: 1; }
+.nav-label {
+  font-size: 10px; font-family: 'DM Mono', monospace;
+  color: var(--text3); letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 0 1.25rem 0.5rem;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0.55rem 1.25rem; cursor: pointer;
+  font-size: 13.5px; color: var(--text2);
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+  user-select: none;
+}
+.nav-item:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.nav-item.active {
+  color: var(--accent); border-left-color: var(--accent);
+  background: rgba(232,200,74,0.06);
+}
+.nav-icon { width: 16px; text-align: center; font-size: 14px; opacity: 0.8; }
+.nav-badge {
+  margin-left: auto; font-size: 10px; font-family: 'DM Mono', monospace;
+  background: var(--navy3); color: var(--text2);
+  padding: 1px 6px; border-radius: 20px;
+}
+.nav-badge.alert { background: rgba(192,57,43,0.3); color: #e74c3c; }
+
+.sidebar-bottom {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border);
+}
+.admin-profile {
+  display: flex; align-items: center; gap: 10px;
+}
+.admin-av {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; color: var(--navy);
+}
+.admin-info { flex: 1; }
+.admin-name { font-size: 12px; font-weight: 500; }
+.admin-role { font-size: 10px; color: var(--accent); font-family: 'DM Mono', monospace; }
+
+/* ── MAIN ── */
+.main {
+  margin-left: var(--sidebar);
+  flex: 1; display: flex; flex-direction: column; min-height: 100vh;
+}
+
+.topbar {
+  height: 56px;
+  background: rgba(26,29,46,0.8);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 2rem; gap: 1rem;
+  position: sticky; top: 0; z-index: 50;
+}
+.topbar-title { font-size: 15px; font-weight: 500; flex: 1; }
+.topbar-title span { color: var(--text2); font-weight: 400; }
+.topbar-actions { display: flex; gap: 8px; align-items: center; }
+.tb-btn {
+  padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--navy3); color: var(--text2); font-size: 12px;
+  cursor: pointer; transition: all 0.15s; font-family: 'DM Sans', sans-serif;
+}
+.tb-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.15); }
+.tb-btn.primary {
+  background: var(--accent); color: var(--navy); border-color: transparent; font-weight: 600;
+}
+.tb-btn.primary:hover { background: var(--accent2); }
+
+.content { padding: 2rem; flex: 1; }
+
+/* ── PAGE SECTIONS ── */
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── KPI CARDS ── */
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem;
+}
+.kpi-card {
+  background: var(--navy2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1.25rem 1.5rem;
+  position: relative; overflow: hidden;
+}
+.kpi-card::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.kpi-card.c-gold::after  { background: var(--accent); }
+.kpi-card.c-green::after { background: var(--green); }
+.kpi-card.c-blue::after  { background: var(--blue); }
+.kpi-card.c-orange::after { background: var(--orange); }
+
+.kpi-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; font-family: 'DM Mono', monospace; margin-bottom: 0.5rem; }
+.kpi-val { font-size: 32px; font-weight: 600; line-height: 1; margin-bottom: 0.4rem; font-family: 'DM Mono', monospace; }
+.kpi-sub { font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 4px; }
+.kpi-trend { font-size: 11px; padding: 1px 6px; border-radius: 4px; font-family: 'DM Mono', monospace; }
+.kpi-trend.up   { background: rgba(39,174,96,0.2); color: #2ecc71; }
+.kpi-trend.down { background: rgba(192,57,43,0.2); color: #e74c3c; }
+
+/* ── SECTION HEADER ── */
+.sec-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;
+}
+.sec-title { font-size: 14px; font-weight: 500; color: var(--text2); display: flex; align-items: center; gap: 8px; }
+.sec-title::before { content: ''; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; display: block; }
+
+/* ── TABLE ── */
+.table-wrap {
+  background: var(--navy2); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden; margin-bottom: 2rem;
+}
+.table-toolbar {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+}
+.search-box {
+  flex: 1; max-width: 280px;
+  background: var(--navy3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 6px 12px;
+  color: var(--text); font-size: 13px; font-family: 'DM Sans', sans-serif;
+  outline: none;
+}
+.search-box:focus { border-color: rgba(232,200,74,0.4); }
+.search-box::placeholder { color: var(--text3); }
+
+.filter-pill {
+  padding: 5px 12px; border-radius: 20px; font-size: 12px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif;
+  transition: all 0.15s;
+}
+.filter-pill:hover, .filter-pill.active { border-color: var(--accent); color: var(--accent); }
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  font-size: 11px; font-family: 'DM Mono', monospace;
+  color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 0.6rem 1.25rem; text-align: left;
+  border-bottom: 1px solid var(--border); font-weight: 400;
+}
+tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s; cursor: pointer;
+}
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: rgba(255,255,255,0.03); }
+td {
+  padding: 0.75rem 1.25rem; font-size: 13px;
+}
+td.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2); }
+
+/* ── BADGES ── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 500;
+  font-family: 'DM Mono', monospace;
+}
+.badge::before { content: '●'; font-size: 7px; }
+.badge.active  { background: rgba(39,174,96,0.15); color: #2ecc71; }
+.badge.trial   { background: rgba(232,200,74,0.15); color: var(--accent); }
+.badge.expired { background: rgba(192,57,43,0.15); color: #e74c3c; }
+.badge.pending { background: rgba(41,128,185,0.15); color: #5dade2; }
+.badge.basic   { background: rgba(90,88,85,0.3); color: var(--text2); }
+.badge.pro     { background: rgba(41,128,185,0.15); color: #5dade2; }
+.badge.enterprise { background: rgba(232,200,74,0.15); color: var(--accent); }
+
+/* ── ACTION ICONS ── */
+.action-row { display: flex; gap: 6px; }
+.act-btn {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--navy3); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 12px; color: var(--text2);
+  transition: all 0.15s;
+}
+.act-btn:hover { color: var(--accent); border-color: rgba(232,200,74,0.3); }
+
+/* ── TWO-COL GRID ── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+.one-two { display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; margin-bottom: 2rem; }
+
+/* ── CHART MOCK ── */
+.chart-card {
+  background: var(--navy2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1.25rem 1.5rem;
+}
+.chart-area {
+  height: 160px; position: relative; margin-top: 1rem;
+  display: flex; align-items: flex-end; gap: 8px;
+}
+.bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.bar-wrap { width: 100%; display: flex; gap: 3px; align-items: flex-end; }
+.bar {
+  flex: 1; border-radius: 4px 4px 0 0;
+  transition: opacity 0.2s;
+}
+.bar:hover { opacity: 0.8; }
+.bar-label { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--text3); }
+.chart-legend { display: flex; gap: 1rem; margin-top: 0.75rem; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+.legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+/* ── REVENUE CARD ── */
+.rev-list { margin-top: 0.75rem; }
+.rev-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.6rem 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.rev-row:last-child { border-bottom: none; }
+.rev-name { display: flex; align-items: center; gap: 8px; }
+.rev-dot { width: 8px; height: 8px; border-radius: 50%; }
+.rev-amount { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent); }
+
+/* ── MODAL ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--navy2); border: 1px solid var(--border);
+  border-radius: 16px; width: 560px; max-width: 95vw;
+  max-height: 90vh; overflow-y: auto;
+  animation: modalIn 0.2s ease;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+.modal-header {
+  padding: 1.5rem 1.5rem 1rem;
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 16px; font-weight: 600; }
+.modal-close {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--navy3); border: none; color: var(--text2);
+  cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center;
+}
+.modal-body { padding: 1.5rem; }
+.modal-footer {
+  padding: 1rem 1.5rem;
+  display: flex; justify-content: flex-end; gap: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── FORM ── */
+.form-row { margin-bottom: 1rem; }
+.form-label { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; display: block; }
+.form-input, .form-select, .form-textarea {
+  width: 100%; background: var(--navy3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 12px; color: var(--text);
+  font-size: 13px; font-family: 'DM Sans', sans-serif; outline: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: rgba(232,200,74,0.4); }
+.form-select { cursor: pointer; }
+.form-textarea { resize: vertical; min-height: 80px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+/* ── CONFIG JSON ── */
+.json-editor {
+  font-family: 'DM Mono', monospace; font-size: 12px;
+  background: var(--navy); border: 1px solid var(--border);
+  border-radius: 8px; padding: 1rem; color: #a8d8a8;
+  min-height: 160px; resize: vertical; width: 100%; outline: none;
+  line-height: 1.6;
+}
+.json-editor:focus { border-color: rgba(232,200,74,0.3); }
+
+/* ── ALERT ── */
+.alert-list { display: flex; flex-direction: column; gap: 8px; }
+.alert-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--navy3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.75rem 1rem; font-size: 13px;
+}
+.alert-item.warn { border-color: rgba(230,126,34,0.3); }
+.alert-item.info { border-color: rgba(41,128,185,0.3); }
+.alert-ico { font-size: 16px; margin-top: 1px; }
+.alert-text { flex: 1; }
+.alert-text strong { font-weight: 500; display: block; margin-bottom: 2px; }
+.alert-time { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text3); }
+
+/* ── COMPANY DETAIL ── */
+.detail-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+.dtab {
+  padding: 0.6rem 1.25rem; font-size: 13px; color: var(--text2);
+  border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s; margin-bottom: -1px;
+}
+.dtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── STATS MINI ── */
+.mini-stats { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
+.mini-stat {
+  flex: 1; min-width: 100px;
+  background: var(--navy3); border-radius: 8px; padding: 0.75rem 1rem;
+  text-align: center;
+}
+.mini-stat-val { font-size: 22px; font-weight: 600; font-family: 'DM Mono', monospace; }
+.mini-stat-lbl { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+/* ── ACTIVITY FEED ── */
+.activity-feed { display: flex; flex-direction: column; gap: 0; }
+.activity-item {
+  display: flex; gap: 12px; padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.activity-item:last-child { border-bottom: none; }
+.a-dot {
+  width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; flex-shrink: 0;
+}
+.a-text { flex: 1; color: var(--text2); line-height: 1.4; }
+.a-text strong { color: var(--text); font-weight: 500; }
+.a-time { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--text3); white-space: nowrap; }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed; bottom: 2rem; right: 2rem;
+  background: var(--navy3); border: 1px solid var(--accent);
+  border-radius: 10px; padding: 0.85rem 1.25rem;
+  font-size: 13px; color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+  z-index: 999; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  animation: toastIn 0.3s ease;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.toast.show { opacity: 1; pointer-events: auto; }
+@keyframes toastIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* ── EMPTY ── */
+.empty-state {
+  text-align: center; padding: 3rem 2rem; color: var(--text3);
+}
+.empty-icon { font-size: 36px; margin-bottom: 0.75rem; opacity: 0.4; }
+.empty-text { font-size: 13px; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--navy4); border-radius: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ── EKRAN LOGOWANIA ── -->
+<div id="loginScreen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;position:relative;z-index:10">
+  <div style="background:var(--navy2);border:1px solid var(--border);border-radius:16px;padding:2.5rem;width:360px;text-align:center">
+    <div style="width:48px;height:48px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:14px;font-weight:600;color:var(--navy);margin:0 auto 1.5rem">SA</div>
+    <div style="font-size:18px;font-weight:600;margin-bottom:4px">SQDP Admin</div>
+    <div style="font-size:12px;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:2rem">SUPER ADMINISTRATOR</div>
+    <div style="text-align:left;margin-bottom:1rem">
+      <label style="font-size:11px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:5px">Login</label>
+      <input id="loginUser" type="text" autocomplete="username"
+        style="width:100%;background:var(--navy3);border:1px solid var(--border);border-radius:7px;padding:8px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none"
+        onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
+    </div>
+    <div style="text-align:left;margin-bottom:1.5rem">
+      <label style="font-size:11px;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:5px">Hasło</label>
+      <input id="loginPass" type="password" autocomplete="current-password"
+        style="width:100%;background:var(--navy3);border:1px solid var(--border);border-radius:7px;padding:8px 12px;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none"
+        onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div id="loginError" style="color:#e74c3c;font-size:12px;margin-bottom:1rem;display:none">Nieprawidłowy login lub hasło</div>
+    <button onclick="doLogin()"
+      style="width:100%;padding:10px;background:var(--accent);color:var(--navy);border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">
+      Zaloguj się
+    </button>
+    <div style="margin-top:1.5rem;font-size:10px;color:var(--text3);font-family:'DM Mono',monospace">© 2026 Piotr Mieczkowski</div>
+  </div>
+</div>
+
+<div class="app" id="appScreen" style="display:none">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">
+        <div class="logo-sq">SA</div>
+        <span class="logo-name">SQDP Admin</span>
+      </div>
+      <div class="logo-sub">Super Administrator</div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="nav-label">Główne</div>
+      <div class="nav-item active" onclick="nav('dashboard')">
+        <span class="nav-icon">▦</span> Dashboard
+      </div>
+      <div class="nav-item" onclick="nav('companies')">
+        <span class="nav-icon">🏭</span> Firmy
+        <span class="nav-badge" id="badge-firms">—</span>
+      </div>
+      <div class="nav-item" onclick="nav('users')">
+        <span class="nav-icon">👤</span> Użytkownicy
+        <span class="nav-badge" id="badge-users">—</span>
+      </div>
+      <div class="nav-item" onclick="nav('subscriptions')">
+        <span class="nav-icon">💳</span> Subskrypcje
+        <span class="nav-badge" id="badge-subs"></span>
+      </div>
+
+      <div class="nav-label" style="margin-top:1rem">Produkt</div>
+      <div class="nav-item" onclick="nav('boards')">
+        <span class="nav-icon">📋</span> Tablice
+      </div>
+      <div class="nav-item" onclick="nav('templates')">
+        <span class="nav-icon">🗂</span> Szablony config
+      </div>
+      <div class="nav-item" onclick="nav('activity')">
+        <span class="nav-icon">📡</span> Aktywność
+      </div>
+
+      <div class="nav-label" style="margin-top:1rem">System</div>
+      <div class="nav-item" onclick="nav('alerts')">
+        <span class="nav-icon">🔔</span> Alerty
+        <span class="nav-badge alert">3</span>
+      </div>
+      <div class="nav-item" onclick="nav('settings')">
+        <span class="nav-icon">⚙</span> Ustawienia
+      </div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="admin-profile">
+        <div class="admin-av">P</div>
+        <div class="admin-info">
+          <div class="admin-name">Piotr</div>
+          <div class="admin-role">superadmin</div>
+        </div>
+        <span style="color:var(--text3);cursor:pointer;font-size:14px" onclick="sessionStorage.removeItem('adminAuth');location.reload()" title="Wyloguj">⏏</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="topbarTitle">Dashboard <span>/ Przegląd</span></div>
+      <div class="topbar-actions">
+        <button class="tb-btn" onclick="openModal('addCompany')">+ Dodaj firmę</button>
+        <button class="tb-btn primary" onclick="showToast('Synchronizacja zakończona ✓')">↻ Sync</button>
+      </div>
+    </div>
+
+    <div id="loadingBar" style="height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:0;transition:opacity 0.3s;position:sticky;top:56px;z-index:49"></div>
+    <div class="content">
+
+      <!-- ══════════ DASHBOARD ══════════ -->
+      <div class="page active" id="page-dashboard">
+
+        <div class="kpi-grid">
+          <div class="kpi-card c-gold">
+            <div class="kpi-label">Aktywne firmy</div>
+            <div class="kpi-val" id="kpi-firmy">—</div>
+            <div class="kpi-sub">łącznie w systemie</div>
+          </div>
+          <div class="kpi-card c-green">
+            <div class="kpi-label">MRR</div>
+            <div class="kpi-val" id="kpi-mrr">—</div>
+            <div class="kpi-sub">PLN / miesiąc</div>
+          </div>
+          <div class="kpi-card c-blue">
+            <div class="kpi-label">Użytkownicy</div>
+            <div class="kpi-val" id="kpi-users">—</div>
+            <div class="kpi-sub">łącznie</div>
+          </div>
+          <div class="kpi-card c-orange">
+            <div class="kpi-label">Wygasa wkrótce</div>
+            <div class="kpi-val" id="kpi-wygasa">—</div>
+            <div class="kpi-sub">wymagają uwagi</div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <!-- Chart -->
+          <div class="chart-card">
+            <div class="sec-title">Przychód miesięczny (PLN)</div>
+            <div class="chart-area" id="chartArea"></div>
+            <div class="chart-legend">
+              <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Pro</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div> Basic</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div> Enterprise</div>
+            </div>
+          </div>
+
+          <!-- Revenue breakdown -->
+          <div class="chart-card">
+            <div class="sec-title">Rozkład subskrypcji</div>
+            <div class="rev-list" id="revenueBreakdown">
+              <div style="color:var(--text3);font-size:13px;padding:1rem 0;text-align:center">Ładowanie...</div>
+            </div>
+            <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px">
+              <span style="color:var(--text2)">Łączny MRR</span>
+              <span id="totalMRR" style="font-family:'DM Mono',monospace;color:var(--accent);font-weight:600">— PLN</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent activity -->
+        <div class="sec-header">
+          <div class="sec-title">Ostatnia aktywność</div>
+        </div>
+        <div class="table-wrap">
+          <div class="activity-feed" id="dashActivityFeed" style="padding: 0.5rem 1.25rem">
+            <div style="color:var(--text3);font-size:13px;padding:1rem 0;text-align:center">Ładowanie...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════ FIRMY ══════════ -->
+      <div class="page" id="page-companies">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <input class="search-box" placeholder="🔍 Szukaj firmy..." oninput="filterCompanies(this.value)">
+            <button class="filter-pill active" onclick="filterPlan(this,'all')">Wszystkie</button>
+            <button class="filter-pill" onclick="filterPlan(this,'enterprise')">Enterprise</button>
+            <button class="filter-pill" onclick="filterPlan(this,'pro')">Pro</button>
+            <button class="filter-pill" onclick="filterPlan(this,'basic')">Basic</button>
+            <button class="filter-pill" onclick="filterPlan(this,'trial')">Trial</button>
+            <button class="tb-btn primary" style="margin-left:auto" onclick="openModal('addCompany')">+ Nowa firma</button>
+          </div>
+          <table id="companiesTable">
+            <thead>
+              <tr>
+                <th>Firma</th>
+                <th>Plan</th>
+                <th>Status</th>
+                <th>Użytkownicy</th>
+                <th>Tablice</th>
+                <th>MRR</th>
+                <th>Wygasa</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="companiesTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══════════ USERS ══════════ -->
+      <div class="page" id="page-users">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <input class="search-box" placeholder="🔍 Szukaj użytkownika...">
+            <button class="filter-pill active">Wszyscy</button>
+            <button class="filter-pill">Admin</button>
+            <button class="filter-pill">User</button>
+            <button class="tb-btn primary" style="margin-left:auto" onclick="openModal('addUser')">+ Dodaj użytkownika</button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Imię i nazwisko</th><th>Email</th><th>Firma</th><th>Rola</th><th>Status</th><th>Ostatnie logowanie</th><th></th></tr>
+            </thead>
+            <tbody id="usersTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══════════ SUBSKRYPCJE ══════════ -->
+      <div class="page" id="page-subscriptions">
+        <div class="kpi-grid" style="margin-bottom:1.5rem">
+          <div class="kpi-card c-gold"><div class="kpi-label">MRR</div><div class="kpi-val" id="sub-mrr">—</div><div class="kpi-sub">PLN / miesiąc</div></div>
+          <div class="kpi-card c-green"><div class="kpi-label">Aktywne</div><div class="kpi-val" id="sub-active">—</div><div class="kpi-sub">subskrypcji</div></div>
+          <div class="kpi-card c-orange"><div class="kpi-label">Wygasa &lt;30 dni</div><div class="kpi-val" id="sub-expiring">—</div><div class="kpi-sub" style="color:#e74c3c">wymaga uwagi</div></div>
+          <div class="kpi-card c-blue"><div class="kpi-label">Trial</div><div class="kpi-val" id="sub-trial">—</div><div class="kpi-sub">do konwersji</div></div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <input class="search-box" placeholder="🔍 Szukaj...">
+            <button class="filter-pill active">Wszystkie</button>
+            <button class="filter-pill">Aktywne</button>
+            <button class="filter-pill">Wygasające</button>
+            <button class="filter-pill">Trial</button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Firma</th><th>Plan</th><th>Status</th><th>Kwota</th><th>Data odnowienia</th><th>Płatność</th><th></th></tr>
+            </thead>
+            <tbody id="subsTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══════════ TABLICE ══════════ -->
+      <div class="page" id="page-boards">
+        <div class="two-col">
+          <div class="chart-card">
+            <div class="sec-title">Użycie tablic</div>
+            <div class="rev-list">
+              <div class="rev-row"><div class="rev-name"><span>📋</span> SQDP Standard</div><div><span class="badge active">8 firm</span></div></div>
+              <div class="rev-row"><div class="rev-name"><span>📋</span> SQDCA (Riverdi)</div><div><span class="badge enterprise">dedykowana</span></div></div>
+              <div class="rev-row"><div class="rev-name"><span>📋</span> Kamishibai</div><div><span class="badge pro">5 firm</span></div></div>
+              <div class="rev-row"><div class="rev-name"><span>📋</span> KAIZEN</div><div><span class="badge basic">3 firmy</span></div></div>
+              <div class="rev-row"><div class="rev-name"><span>📋</span> Matryca Kompetencji</div><div><span class="badge basic">4 firmy</span></div></div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="sec-title">Ostatnie zmiany config</div>
+            <div class="activity-feed">
+              <div class="activity-item"><div class="a-dot" style="background:var(--accent)"></div><div class="a-text"><strong>Unisystem</strong> — SQDP: dodano kategorię "Cost"</div><div class="a-time">2 dni temu</div></div>
+              <div class="activity-item"><div class="a-dot" style="background:var(--blue)"></div><div class="a-text"><strong>Metal-Tech</strong> — Kamishibai: zmiana progów</div><div class="a-time">5 dni temu</div></div>
+              <div class="activity-item"><div class="a-dot" style="background:var(--green)"></div><div class="a-text"><strong>LogiTrans</strong> — SQDP: aktywacja tryb trial</div><div class="a-time">wczoraj</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════ SZABLONY CONFIG ══════════ -->
+      <div class="page" id="page-templates">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem">
+          <div class="kpi-card c-gold" style="cursor:pointer" onclick="openModal('editTemplate')">
+            <div class="kpi-label">Automotive</div>
+            <div style="font-size:24px;margin:0.5rem 0">🚗</div>
+            <div style="font-size:13px;color:var(--text2)">SQDP + Cost + OEE, progi dla automotive</div>
+            <div style="margin-top:0.75rem;display:flex;gap:6px">
+              <span class="badge pro">5 firm używa</span>
+            </div>
+          </div>
+          <div class="kpi-card c-blue" style="cursor:pointer" onclick="openModal('editTemplate')">
+            <div class="kpi-label">Warehouse / Magazyn</div>
+            <div style="font-size:24px;margin:0.5rem 0">📦</div>
+            <div style="font-size:13px;color:var(--text2)">SQDP + Kamishibai, KPIs logistyczne</div>
+            <div style="margin-top:0.75rem;display:flex;gap:6px">
+              <span class="badge basic">3 firmy używają</span>
+            </div>
+          </div>
+          <div class="kpi-card c-green" style="cursor:pointer" onclick="openModal('editTemplate')">
+            <div class="kpi-label">FMCG / Spożywczy</div>
+            <div style="font-size:24px;margin:0.5rem 0">🏭</div>
+            <div style="font-size:13px;color:var(--text2)">SQDCA z rozszerzonym Quality</div>
+            <div style="margin-top:0.75rem;display:flex;gap:6px">
+              <span class="badge basic">1 firma używa</span>
+            </div>
+          </div>
+          <div class="kpi-card" style="cursor:pointer;border-style:dashed;border-color:rgba(232,200,74,0.3);display:flex;align-items:center;justify-content:center;gap:8px;padding:2rem;color:var(--accent)" onclick="openModal('addTemplate')">
+            <span style="font-size:20px">+</span> Nowy szablon
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════ AKTYWNOŚĆ ══════════ -->
+      <div class="page" id="page-activity">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <input class="search-box" placeholder="🔍 Szukaj w logach...">
+            <button class="filter-pill active">Wszystkie</button>
+            <button class="filter-pill">Logowania</button>
+            <button class="filter-pill">Zmiany config</button>
+            <button class="filter-pill">Płatności</button>
+          </div>
+          <table>
+            <thead><tr><th>Czas</th><th>Firma</th><th>Użytkownik</th><th>Akcja</th><th>Szczegóły</th></tr></thead>
+            <tbody id="activityTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══════════ ALERTY ══════════ -->
+      <div class="page" id="page-alerts">
+        <div class="alert-list">
+          <div class="alert-item warn">
+            <div class="alert-ico">⚠️</div>
+            <div class="alert-text">
+              <strong>AutoParts Wrocław — subskrypcja wygasła</strong>
+              Konto aktywne, brak odnowienia od 3 dni. Warto wysłać przypomnienie.
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+              <div class="alert-time">pon. 08:00</div>
+              <button class="tb-btn" style="font-size:11px;padding:3px 10px">Wyślij email</button>
+            </div>
+          </div>
+          <div class="alert-item warn">
+            <div class="alert-ico">⚠️</div>
+            <div class="alert-text">
+              <strong>LogiTrans S.A. — trial kończy się za 4 dni</strong>
+              Użytkownik nie otworzył jeszcze SQDP. Brak konwersji.
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+              <div class="alert-time">dziś 06:00</div>
+              <button class="tb-btn" style="font-size:11px;padding:3px 10px">Kontakt</button>
+            </div>
+          </div>
+          <div class="alert-item info">
+            <div class="alert-ico">ℹ️</div>
+            <div class="alert-text">
+              <strong>Metal-Tech Gdańsk — upgrade planu</strong>
+              Firma przeszła z Basic na Pro. MRR +199 PLN.
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+              <div class="alert-time">wczoraj 16:30</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════ USTAWIENIA ══════════ -->
+      <div class="page" id="page-settings">
+        <div class="two-col">
+          <div class="chart-card">
+            <div class="sec-title">Plany i ceny (PLN)</div>
+            <div class="rev-list">
+              <div class="rev-row"><div class="rev-name">Basic</div><div><input type="number" value="99" style="width:80px;background:var(--navy3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none"> PLN/mies.</div></div>
+              <div class="rev-row"><div class="rev-name">Pro</div><div><input type="number" value="299" style="width:80px;background:var(--navy3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none"> PLN/mies.</div></div>
+              <div class="rev-row"><div class="rev-name">Enterprise</div><div><input type="number" value="599" style="width:80px;background:var(--navy3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none"> PLN/mies.</div></div>
+            </div>
+            <button class="tb-btn primary" style="margin-top:1rem;width:100%" onclick="showToast('Ceny zapisane ✓')">Zapisz ceny</button>
+          </div>
+          <div class="chart-card">
+            <div class="sec-title">Ustawienia systemu</div>
+            <div class="form-row" style="margin-top:0.75rem">
+              <label class="form-label">Email administratora</label>
+              <input class="form-input" value="piotr@sqdp.pl">
+            </div>
+            <div class="form-row">
+              <label class="form-label">Domyślny okres trial (dni)</label>
+              <input class="form-input" type="number" value="14">
+            </div>
+            <div class="form-row">
+              <label class="form-label">Email powiadomień</label>
+              <select class="form-select">
+                <option>Włączone</option>
+                <option>Wyłączone</option>
+              </select>
+            </div>
+            <button class="tb-btn primary" style="margin-top:0.5rem;width:100%" onclick="showToast('Ustawienia zapisane ✓')">Zapisz</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </main>
+</div><!-- /app -->
+</div><!-- /appScreen -->
+
+<!-- ══════ MODALS ══════ -->
+
+<!-- Dodaj firmę -->
+<div class="modal-overlay" id="modal-addCompany">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Dodaj nową firmę</div>
+      <button class="modal-close" onclick="closeModal('addCompany')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <label class="form-label">Nazwa firmy</label>
+          <input class="form-input" placeholder="np. Metal-Tech Sp. z o.o.">
+        </div>
+        <div class="form-row">
+          <label class="form-label">Slug (URL)</label>
+          <input class="form-input" placeholder="np. metal-tech" style="font-family:'DM Mono',monospace">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label class="form-label">Plan</label>
+          <select class="form-select">
+            <option value="starter">Starter (Trial)</option><option value="starter">Starter</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Email kontaktowy</label>
+          <input class="form-input" placeholder="kontakt@firma.pl">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Szablon konfiguracji</label>
+        <select class="form-select">
+          <option>— brak (pusty config) —</option>
+          <option>Automotive</option>
+          <option>Warehouse / Magazyn</option>
+          <option>FMCG / Spożywczy</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Config JSON (opcjonalnie)</label>
+        <textarea class="json-editor" rows="6">{
+  "sqdp": {
+    "categories": ["Safety","Quality","Delivery","People"],
+    "scoring": "standard",
+    "statistics": { "enabled": true, "trend_months": 6 }
+  }
+}</textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="tb-btn" onclick="closeModal('addCompany')">Anuluj</button>
+      <button class="tb-btn primary" onclick="addCompany()">Utwórz firmę</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edytuj firmę -->
+<div class="modal-overlay" id="modal-editCompany">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Firma: <span id="editCompanyName" style="color:var(--accent)">—</span></div>
+      <button class="modal-close" onclick="closeModal('editCompany')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-tabs">
+        <div class="dtab active" onclick="dtab(this,'et-info')">Info</div>
+        <div class="dtab" onclick="dtab(this,'et-config')">Config JSON</div>
+        <div class="dtab" onclick="dtab(this,'et-users')">Użytkownicy</div>
+        <div class="dtab" onclick="dtab(this,'et-billing')">Billing</div>
+      </div>
+      <div id="et-info">
+        <div class="form-grid">
+          <div class="form-row"><label class="form-label">Nazwa</label><input class="form-input" id="ec-name"></div>
+          <div class="form-row"><label class="form-label">Slug</label><input class="form-input" id="ec-slug" style="font-family:'DM Mono',monospace"></div>
+        </div>
+        <div class="form-grid">
+          <div class="form-row"><label class="form-label">Plan</label>
+            <select class="form-select" id="ec-plan">
+              <option value="starter">Starter</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option>
+            </select>
+          </div>
+          <div class="form-row"><label class="form-label">Status</label>
+            <select class="form-select" id="ec-status">
+              <option>active</option><option>trial</option><option>expired</option><option>suspended</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="et-config" style="display:none">
+        <div class="form-row">
+          <label class="form-label">Konfiguracja JSON</label>
+          <textarea class="json-editor" id="ec-config" rows="12"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:0.5rem">
+          <button class="tb-btn" onclick="loadTemplate()">Załaduj szablon</button>
+          <button class="tb-btn" onclick="validateJson()">Waliduj JSON</button>
+        </div>
+      </div>
+      <div id="et-users" style="display:none">
+        <div class="mini-stats" id="ec-userstats"></div>
+        <div id="ec-userlist"></div>
+      </div>
+      <div id="et-billing" style="display:none">
+        <div class="form-grid">
+          <div class="form-row"><label class="form-label">Kwota (PLN/mies.)</label><input class="form-input" id="ec-amount" type="number"></div>
+          <div class="form-row"><label class="form-label">Data odnowienia</label><input class="form-input" id="ec-renewal" type="date"></div>
+        </div>
+        <div class="form-row"><label class="form-label">Notatka</label><textarea class="form-textarea" id="ec-note" placeholder="Wewnętrzna notatka..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="tb-btn" style="color:var(--red);margin-right:auto" onclick="deleteCompany()">Usuń firmę</button>
+      <button class="tb-btn" onclick="closeModal('editCompany')">Anuluj</button>
+      <button class="tb-btn primary" onclick="saveCompany()">Zapisz zmiany</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dodaj użytkownika -->
+<div class="modal-overlay" id="modal-addUser">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Dodaj użytkownika</div>
+      <button class="modal-close" onclick="closeModal('addUser')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row"><label class="form-label">Imię i nazwisko</label><input class="form-input"></div>
+        <div class="form-row"><label class="form-label">Email</label><input class="form-input" type="email"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label class="form-label">Firma</label>
+          <select class="form-select" id="addUserCompany"></select>
+        </div>
+        <div class="form-row"><label class="form-label">Rola</label>
+          <select class="form-select"><option>user</option><option>admin</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="tb-btn" onclick="closeModal('addUser')">Anuluj</button>
+      <button class="tb-btn primary" onclick="showToast('Użytkownik dodany ✓');closeModal('addUser')">Dodaj</button>
+    </div>
+  </div>
+</div>
+
+<!-- Szablon config -->
+<div class="modal-overlay" id="modal-editTemplate">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Edytuj szablon: Automotive</div>
+      <button class="modal-close" onclick="closeModal('editTemplate')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-label">Nazwa szablonu</label><input class="form-input" value="Automotive"></div>
+      <div class="form-row">
+        <label class="form-label">Config JSON</label>
+        <textarea class="json-editor" rows="14">{
+  "sqdp": {
+    "categories": ["Safety","Quality","Delivery","People","Cost"],
+    "scoring": "automotive",
+    "custom_scoring_rules": {
+      "green_threshold": 98,
+      "yellow_threshold": 95,
+      "red_threshold": 90,
+      "weight_safety": 2.0,
+      "weight_quality": 1.5
+    },
+    "statistics": {
+      "enabled": true,
+      "trend_months": 6,
+      "custom_kpis": ["PPM","OEE","Scrap Rate","FTT"]
+    }
+  },
+  "kamishibai": { "enabled": true, "frequency": "daily" }
+}</textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="tb-btn" onclick="closeModal('editTemplate')">Anuluj</button>
+      <button class="tb-btn primary" onclick="showToast('Szablon zapisany ✓');closeModal('editTemplate')">Zapisz szablon</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-addTemplate">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Nowy szablon konfiguracji</div>
+      <button class="modal-close" onclick="closeModal('addTemplate')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row"><label class="form-label">Nazwa szablonu</label><input class="form-input" placeholder="np. Elektronika / PCB"></div>
+      <div class="form-row"><label class="form-label">Branża</label><input class="form-input" placeholder="np. Electronics"></div>
+      <div class="form-row"><label class="form-label">Config JSON</label><textarea class="json-editor" rows="10" placeholder='{"sqdp": {...}}'></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="tb-btn" onclick="closeModal('addTemplate')">Anuluj</button>
+      <button class="tb-btn primary" onclick="showToast('Szablon utworzony ✓');closeModal('addTemplate')">Utwórz</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast">✓ <span id="toastMsg"></span></div>
+
+<script>
+// ── LOGOWANIE (hasło tymczasowe — zmienić przed produkcją) ──
+const ADMIN_LOGIN = 'admin';
+const ADMIN_PASS  = 'lean2026';
+
+function doLogin() {
+  const u = document.getElementById('loginUser').value;
+  const p = document.getElementById('loginPass').value;
+  if (u === ADMIN_LOGIN && p === ADMIN_PASS) {
+    sessionStorage.setItem('adminAuth', '1');
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display   = 'flex';
+    loadAll();
+  } else {
+    document.getElementById('loginError').style.display = 'block';
+    document.getElementById('loginPass').value = '';
+  }
+}
+
+function checkAuth() {
+  if (sessionStorage.getItem('adminAuth') === '1') {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display   = 'flex';
+    loadAll();
+  }
+}
+
+// ── KONFIGURACJA SUPABASE ──
+const SUPABASE_URL = 'https://hyisabnvzrdplnucwfeh.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5aXNhYm52enJkcGxudWN3ZmVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM4NTY5OTQsImV4cCI6MjA1OTQzMjk5NH0.yIBBSFNNQBHHbNsRU00KfFDWCwNBmWgz6JVfTJ1KZDU';
+
+const db = {
+  async get(table, params = '') {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+    });
+    return res.json();
+  },
+  async post(table, data) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  async patch(table, id, data) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  async delete(table, id) {
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+    });
+  }
+};
+
+// ── STAN APLIKACJI ──
+let companies = [];
+let users = [];
+let activity = [];
+let currentFilter = 'all';
+let editingCompanyId = null;
+
+// ── ŁADOWANIE DANYCH Z SUPABASE ──
+async function loadAll() {
+  setLoading(true);
+  companies = await db.get('companies', 'order=created_at.desc');
+  users     = await db.get('users', 'order=created_at.desc');
+  activity  = await db.get('activity_log', 'order=created_at.desc&limit=50');
+  setLoading(false);
+  renderCompanies();
+  renderUsers();
+  renderSubs();
+  renderActivity();
+  updateKPIs();
+  renderChart();
+  updateNavBadges();
+  renderDashActivity();
+  renderRevenueBreakdown();
+}
+
+function setLoading(on) {
+  document.getElementById('loadingBar').style.opacity = on ? '1' : '0';
+}
+
+function updateKPIs() {
+  const aktywne    = companies.filter(c => c.status === 'active').length;
+  const mrr        = companies.reduce((s, c) => s + (c.mrr || 0), 0);
+  const usersCount = users.length;
+  const wygasa     = companies.filter(c => isExpiringSoon(c.renewal_date) || c.status === 'expired').length;
+  document.getElementById('kpi-firmy').textContent  = aktywne;
+  document.getElementById('kpi-mrr').textContent    = mrr.toLocaleString('pl-PL');
+  document.getElementById('kpi-users').textContent  = usersCount;
+  document.getElementById('kpi-wygasa').textContent = wygasa;
+  // subskrypcje page
+  const se = document.getElementById('sub-mrr');
+  if (se) {
+    document.getElementById('sub-mrr').textContent      = mrr.toLocaleString('pl-PL');
+    document.getElementById('sub-active').textContent   = companies.filter(c=>c.status==='active').length;
+    document.getElementById('sub-expiring').textContent = companies.filter(c=>isExpiringSoon(c.renewal_date)).length;
+    document.getElementById('sub-trial').textContent    = companies.filter(c=>c.status==='trial').length;
+  }
+}
+
+function updateNavBadges() {
+  const wygasa = companies.filter(c => isExpiringSoon(c.renewal_date) || c.status === 'expired').length;
+  document.getElementById('badge-subs').textContent  = wygasa || '';
+  document.getElementById('badge-subs').className   = 'nav-badge' + (wygasa ? ' alert' : '');
+  document.getElementById('badge-firms').textContent = companies.length;
+  document.getElementById('badge-users').textContent = users.length;
+}
+
+function renderRevenueBreakdown() {
+  const plany = [
+    { label:'Enterprise', color:'var(--orange)', plan:'enterprise' },
+    { label:'Pro',        color:'var(--accent)', plan:'pro' },
+    { label:'Starter',    color:'var(--blue)',   plan:'starter' },
+  ];
+  const mrr = companies.reduce((s, c) => s + (c.mrr || 0), 0);
+  document.getElementById('revenueBreakdown').innerHTML = plany.map(p => {
+    const firmy = companies.filter(c => c.plan === p.plan);
+    const suma  = firmy.reduce((s, c) => s + (c.mrr || 0), 0);
+    return `<div class="rev-row">
+      <div class="rev-name"><div class="rev-dot" style="background:${p.color}"></div> ${p.label} (${firmy.length} ${firmy.length===1?'firma':firmy.length<5?'firmy':'firm'})</div>
+      <div class="rev-amount">${suma.toLocaleString('pl-PL')} PLN</div>
+    </div>`;
+  }).join('');
+  document.getElementById('totalMRR').textContent = mrr.toLocaleString('pl-PL') + ' PLN';
+}
+
+function renderDashActivity() {
+  const feed = document.getElementById('dashActivityFeed');
+  if (!activity.length) {
+    feed.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:1rem 0;text-align:center">Brak aktywności</div>';
+    return;
+  }
+  const colors = ['var(--green)','var(--accent)','var(--blue)','var(--orange)','var(--red)'];
+  feed.innerHTML = activity.slice(0,5).map((a, i) => {
+    const czas = new Date(a.created_at).toLocaleString('pl-PL', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return `<div class="activity-item">
+      <div class="a-dot" style="background:${colors[i%colors.length]}"></div>
+      <div class="a-text"><strong>${a.company_name || '—'}</strong> — ${a.action}${a.details ? ': '+a.details : ''}</div>
+      <div class="a-time">${czas}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── RENDER FIRM ──
+function renderCompanies(filter = 'all', search = '') {
+  const tbody = document.getElementById('companiesTbody');
+  let rows = companies.filter(c => {
+    const matchPlan   = filter === 'all' || c.plan === filter;
+    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || c.slug.includes(search.toLowerCase());
+    return matchPlan && matchSearch;
+  });
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-text">Brak firm${search ? ' pasujących do wyszukiwania' : ''}</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(c => `
+    <tr onclick="editCompany('${c.id}')">
+      <td>
+        <div style="font-weight:500">${c.name}</div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--text3)">${c.slug}</div>
+      </td>
+      <td><span class="badge ${c.plan}">${c.plan}</span></td>
+      <td><span class="badge ${c.status}">${c.status}</span></td>
+      <td class="mono">${users.filter(u => u.company_id === c.id).length}</td>
+      <td><div style="display:flex;gap:4px;flex-wrap:wrap">${(c.boards||[]).map(b=>`<span style="font-size:10px;background:var(--navy3);border:1px solid var(--border);padding:2px 6px;border-radius:4px;color:var(--text2)">${b}</span>`).join('')}</div></td>
+      <td class="mono" style="color:var(--accent)">${c.mrr > 0 ? c.mrr+' PLN' : '—'}</td>
+      <td class="mono" style="${isExpiringSoon(c.renewal_date)?'color:#e74c3c':''}">${c.renewal_date || '—'}</td>
+      <td>
+        <div class="action-row" onclick="event.stopPropagation()">
+          <div class="act-btn" onclick="editCompany('${c.id}')" title="Edytuj">✎</div>
+          <div class="act-btn" title="Email">✉</div>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function isExpiringSoon(date) {
+  if (!date) return false;
+  const d = new Date(date), now = new Date();
+  return (d - now) < 30 * 24 * 3600 * 1000 && d > now;
+}
+
+// ── RENDER UŻYTKOWNIKÓW ──
+function renderUsers() {
+  const tbody = document.getElementById('usersTbody');
+  if (!users.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👤</div><div class="empty-text">Brak użytkowników</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = users.map(u => {
+    const firma     = companies.find(c => c.id === u.company_id);
+    const lastLogin = u.last_login ? new Date(u.last_login).toLocaleString('pl-PL', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    return `
+    <tr>
+      <td><div style="font-weight:500">${u.name}</div></td>
+      <td class="mono">${u.email}</td>
+      <td style="font-size:12px;color:var(--text2)">${firma?.name || '—'}</td>
+      <td><span class="badge ${u.role==='admin'?'pro':'basic'}">${u.role}</span></td>
+      <td><span class="badge ${u.status}">${u.status}</span></td>
+      <td class="mono">${lastLogin}</td>
+      <td><div class="action-row"><div class="act-btn">✎</div><div class="act-btn" style="color:var(--red)" onclick="deleteUser('${u.id}')">✕</div></div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── RENDER SUBSKRYPCJI ──
+function renderSubs() {
+  const tbody = document.getElementById('subsTbody');
+  if (!companies.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">💳</div><div class="empty-text">Brak subskrypcji</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = companies.map(c => `
+    <tr>
+      <td style="font-weight:500">${c.name}</td>
+      <td><span class="badge ${c.plan}">${c.plan}</span></td>
+      <td><span class="badge ${c.status}">${c.status}</span></td>
+      <td class="mono" style="color:var(--accent)">${c.mrr > 0 ? c.mrr+' PLN' : '—'}</td>
+      <td class="mono" style="${isExpiringSoon(c.renewal_date)?'color:#e74c3c':''}">${c.renewal_date || '—'}</td>
+      <td><span style="font-size:11px;color:var(--text2)">przelew</span></td>
+      <td><div class="action-row"><div class="act-btn" onclick="editCompany('${c.id}')">✎</div><div class="act-btn">↻</div></div></td>
+    </tr>
+  `).join('');
+}
+
+// ── RENDER AKTYWNOŚCI ──
+function renderActivity() {
+  const tbody = document.getElementById('activityTbody');
+  if (!activity.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📡</div><div class="empty-text">Brak logów aktywności</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = activity.map(a => {
+    const czas = new Date(a.created_at).toLocaleString('pl-PL', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return `
+    <tr>
+      <td class="mono">${czas}</td>
+      <td style="font-weight:500">${a.company_name || '—'}</td>
+      <td style="color:var(--text2);font-size:12px">${a.user_name || '—'}</td>
+      <td>${a.action}</td>
+      <td style="font-size:12px;color:var(--text2)">${a.details || ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── RENDER WYKRESU ──
+function renderChart() {
+  const enterpriseMRR = companies.filter(c=>c.plan==='enterprise'&&c.status==='active').reduce((s,c)=>s+(c.mrr||0),0);
+  const proMRR        = companies.filter(c=>c.plan==='pro'&&c.status==='active').reduce((s,c)=>s+(c.mrr||0),0);
+  const starterMRR    = companies.filter(c=>c.plan==='starter'&&c.status==='active').reduce((s,c)=>s+(c.mrr||0),0);
+  const max = Math.max(enterpriseMRR + proMRR + starterMRR, 1);
+  document.getElementById('chartArea').innerHTML = `
+    <div class="bar-group">
+      <div class="bar-wrap" style="height:140px">
+        <div class="bar" style="height:${enterpriseMRR/max*120}px;background:var(--orange);opacity:0.8" title="Enterprise: ${enterpriseMRR} PLN"></div>
+        <div class="bar" style="height:${proMRR/max*120}px;background:var(--accent);opacity:0.9" title="Pro: ${proMRR} PLN"></div>
+        <div class="bar" style="height:${starterMRR/max*120}px;background:var(--blue);opacity:0.8" title="Starter: ${starterMRR} PLN"></div>
+      </div>
+      <div class="bar-label">Teraz</div>
+    </div>`;
+}
+
+// ── NAVIGATION ──
+const titles = {
+  dashboard:     'Dashboard <span>/ Przegląd</span>',
+  companies:     'Firmy <span>/ Lista klientów</span>',
+  users:         'Użytkownicy <span>/ Zarządzanie</span>',
+  subscriptions: 'Subskrypcje <span>/ Billing</span>',
+  boards:        'Tablice <span>/ Konfiguracja</span>',
+  templates:     'Szablony Config <span>/ Presety branżowe</span>',
+  activity:      'Aktywność <span>/ Logi systemowe</span>',
+  alerts:        'Alerty <span>/ Powiadomienia</span>',
+  settings:      'Ustawienia <span>/ System</span>',
+};
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.querySelector(`.nav-item[onclick="nav('${page}')"]`).classList.add('active');
+  document.getElementById('topbarTitle').innerHTML = titles[page] || page;
+}
+
+// ── FILTRY ──
+function filterCompanies(val) { renderCompanies(currentFilter, val); }
+function filterPlan(el, plan) {
+  document.querySelectorAll('#page-companies .filter-pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active'); currentFilter = plan;
+  renderCompanies(plan);
+}
+
+// ── EDYCJA FIRMY ──
+function editCompany(id) {
+  editingCompanyId = id;
+  const c = companies.find(x => x.id === id);
+  document.getElementById('editCompanyName').textContent = c.name;
+  document.getElementById('ec-name').value    = c.name;
+  document.getElementById('ec-slug').value    = c.slug;
+  document.getElementById('ec-plan').value    = c.plan;
+  document.getElementById('ec-status').value  = c.status;
+  document.getElementById('ec-config').value  = typeof c.config === 'object' ? JSON.stringify(c.config, null, 2) : (c.config || '{}');
+  document.getElementById('ec-amount').value  = c.mrr || 0;
+  document.getElementById('ec-renewal').value = c.renewal_date || '';
+  document.getElementById('ec-note').value    = c.note || '';
+  const cu = users.filter(u => u.company_id === c.id);
+  document.getElementById('ec-userstats').innerHTML = `
+    <div class="mini-stat"><div class="mini-stat-val">${cu.length}</div><div class="mini-stat-lbl">Użytkownicy</div></div>
+    <div class="mini-stat"><div class="mini-stat-val">${(c.boards||[]).length}</div><div class="mini-stat-lbl">Tablice</div></div>
+    <div class="mini-stat"><div class="mini-stat-val">${c.mrr||0}</div><div class="mini-stat-lbl">PLN/mies.</div></div>`;
+  document.getElementById('ec-userlist').innerHTML = `<table style="width:100%;font-size:13px">
+    <thead><tr>
+      <th style="text-align:left;color:var(--text3);font-size:11px;font-family:'DM Mono',monospace;padding:4px 0">Imię</th>
+      <th style="text-align:left;color:var(--text3);font-size:11px;font-family:'DM Mono',monospace;padding:4px 0">Email</th>
+      <th style="text-align:left;color:var(--text3);font-size:11px;font-family:'DM Mono',monospace;padding:4px 0">Rola</th>
+    </tr></thead>
+    <tbody>${cu.map(u=>`<tr>
+      <td style="padding:4px 0">${u.name}</td>
+      <td style="color:var(--text2);font-family:'DM Mono',monospace;font-size:11px;padding:4px 0">${u.email}</td>
+      <td><span class="badge ${u.role==='admin'?'pro':'basic'}">${u.role}</span></td>
+    </tr>`).join('')}</tbody></table>`;
+  openModal('editCompany');
+}
+
+async function saveCompany() {
+  let config = {};
+  try { config = JSON.parse(document.getElementById('ec-config').value); }
+  catch { showToast('❌ Błąd JSON w configu'); return; }
+  const data = {
+    name:         document.getElementById('ec-name').value.trim(),
+    slug:         document.getElementById('ec-slug').value.trim(),
+    plan:         document.getElementById('ec-plan').value,
+    status:       document.getElementById('ec-status').value,
+    mrr:          parseInt(document.getElementById('ec-amount').value) || 0,
+    renewal_date: document.getElementById('ec-renewal').value || null,
+    note:         document.getElementById('ec-note').value,
+    config
+  };
+  await db.patch('companies', editingCompanyId, data);
+  await logActivity(editingCompanyId, data.name, 'Superadmin', 'Edycja firmy', `Plan: ${data.plan}, Status: ${data.status}`);
+  closeModal('editCompany');
+  await loadAll();
+  showToast('Zmiany zapisane ✓');
+}
+
+async function addCompany() {
+  const inputs   = document.querySelectorAll('#modal-addCompany .form-input');
+  const selects  = document.querySelectorAll('#modal-addCompany .form-select');
+  const name     = inputs[0]?.value.trim();
+  const slug     = inputs[1]?.value.trim();
+  const email    = inputs[2]?.value.trim() || '';
+  const plan     = selects[0]?.value || 'starter';
+  if (!name || !slug) { showToast('❌ Podaj nazwę i slug'); return; }
+  await db.post('companies', { name, slug, plan, status: plan === 'starter' ? 'trial' : 'active', email, mrr: 0, boards: [], config: {} });
+  await logActivity(null, name, 'Superadmin', 'Nowa firma', `Plan: ${plan}`);
+  closeModal('addCompany');
+  await loadAll();
+  showToast('Firma dodana ✓');
+}
+
+async function deleteCompany() {
+  if (!confirm('Usunąć firmę? Tej operacji nie można cofnąć.')) return;
+  await db.delete('companies', editingCompanyId);
+  closeModal('editCompany');
+  await loadAll();
+  showToast('Firma usunięta');
+}
+
+async function deleteUser(id) {
+  if (!confirm('Usunąć użytkownika?')) return;
+  await db.delete('users', id);
+  await loadAll();
+  showToast('Użytkownik usunięty');
+}
+
+async function logActivity(companyId, companyName, userName, action, details) {
+  const payload = { company_name: companyName, user_name: userName, action, details };
+  if (companyId) payload.company_id = companyId;
+  await db.post('activity_log', payload);
+}
+
+// ── DETAIL TABS ──
+function dtab(el, target) {
+  el.closest('.modal-body').querySelectorAll('[id^="et-"]').forEach(t => t.style.display='none');
+  el.closest('.detail-tabs').querySelectorAll('.dtab').forEach(t => t.classList.remove('active'));
+  document.getElementById(target).style.display = 'block';
+  el.classList.add('active');
+}
+
+// ── MODALS ──
+function openModal(id) {
+  if (id === 'addUser') {
+    document.getElementById('addUserCompany').innerHTML = companies.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  }
+  document.getElementById('modal-'+id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById('modal-'+id).classList.remove('open');
+}
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if(e.target===m) m.classList.remove('open'); });
+});
+
+// ── UTILS ──
+function loadTemplate() { showToast('Szablon załadowany ✓'); }
+function validateJson() {
+  try {
+    JSON.parse(document.getElementById('ec-config').value);
+    showToast('JSON poprawny ✓');
+  } catch(e) { showToast('❌ Błąd JSON: '+e.message); }
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── INIT ──
+checkAuth();
+</script>
+</body>
+</html>
