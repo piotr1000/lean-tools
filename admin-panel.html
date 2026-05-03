@@ -851,11 +851,12 @@ td.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2
       </div>
       <div class="form-row">
         <label class="form-label">Szablon konfiguracji</label>
-        <select class="form-select">
-          <option>— brak (pusty config) —</option>
-          <option>Automotive</option>
-          <option>Warehouse / Magazyn</option>
-          <option>FMCG / Spożywczy</option>
+        <select class="form-select" id="ac-template" onchange="applyTemplate(this.value)">
+          <option value="">— brak (pusty config) —</option>
+          <option value="automotive">Automotive</option>
+          <option value="warehouse">Warehouse / Magazyn</option>
+          <option value="fmcg">FMCG / Spożywczy</option>
+          <option value="enterprise_custom">Enterprise Custom (SQDCA)</option>
         </select>
       </div>
       <div class="form-row">
@@ -1384,6 +1385,32 @@ async function saveCompany() {
   showToast('Zmiany zapisane ✓');
 }
 
+const TEMPLATES = {
+  automotive: {
+    boards: ['SQDP','Kamishibai','Kaizen'],
+    config: { sqdp: { categories:['Safety','Quality','Delivery','People','Cost'], scoring:'automotive', custom_kpis:['OEE','PPM','Scrap Rate'] }}
+  },
+  warehouse: {
+    boards: ['SQDP','Kaizen'],
+    config: { sqdp: { categories:['Safety','Quality','Delivery','People'], scoring:'standard', custom_kpis:['OTIF','Fill Rate'] }}
+  },
+  fmcg: {
+    boards: ['SQDP','Kamishibai'],
+    config: { sqdp: { categories:['Safety','Quality','Delivery','People'], scoring:'standard', custom_kpis:['OEE','Waste %'] }}
+  },
+  enterprise_custom: {
+    boards: ['SQDCA','Kamishibai','Kaizen'],
+    config: { sqdp: { categories:['Safety','Quality','Delivery','Cost','Action'], scoring:'custom' }}
+  }
+};
+
+function applyTemplate(val) {
+  const t = TEMPLATES[val];
+  const textarea = document.querySelector('#modal-addCompany textarea.json-editor');
+  if (!textarea) return;
+  textarea.value = val ? JSON.stringify(t.config, null, 2) : '{}';
+}
+
 async function addCompany() {
   const inputs   = document.querySelectorAll('#modal-addCompany .form-input');
   const selects  = document.querySelectorAll('#modal-addCompany .form-select');
@@ -1394,7 +1421,7 @@ async function addCompany() {
   if (!name || !slug) { showToast('❌ Podaj nazwę i slug'); return; }
   const trialDays = 14;
     const renewal = new Date(Date.now() + trialDays * 86400000).toISOString().split('T')[0];
-    await db.post('companies', { name, slug, plan: 'starter', status: 'trial', email, mrr: 0, boards: [], config: {}, renewal_date: renewal });
+    await db.post('companies', { name, slug, plan: 'starter', status: 'trial', email, mrr: 0, boards: ['SQDP'], config: config, renewal_date: renewal });
   await logActivity(null, name, 'Superadmin', 'Nowa firma', `Plan: ${plan}`);
   closeModal('addCompany');
   await loadAll();
