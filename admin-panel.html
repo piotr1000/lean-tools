@@ -1421,7 +1421,13 @@ async function addCompany() {
   if (!name || !slug) { showToast('❌ Podaj nazwę i slug'); return; }
   const trialDays = 14;
     const renewal = new Date(Date.now() + trialDays * 86400000).toISOString().split('T')[0];
-    await db.post('companies', { name, slug, plan: 'starter', status: 'trial', email, mrr: 0, boards: ['SQDP'], config: config, renewal_date: renewal });
+    const templateVal = document.getElementById('ac-template')?.value || '';
+  const template = TEMPLATES[templateVal];
+  const boards = template ? template.boards : ['SQDP'];
+  const textarea = document.querySelector('#modal-addCompany textarea.json-editor');
+  let config = {};
+  try { config = JSON.parse(textarea?.value || '{}'); } catch(e) { config = {}; }
+  await db.post('companies', { name, slug, plan: 'starter', status: 'trial', email, mrr: 0, boards, config, renewal_date: renewal });
   await logActivity(null, name, 'Superadmin', 'Nowa firma', `Plan: ${plan}`);
   closeModal('addCompany');
   await loadAll();
