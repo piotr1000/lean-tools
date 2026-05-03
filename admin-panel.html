@@ -240,7 +240,7 @@ td.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2
 .badge.trial   { background: rgba(232,200,74,0.15); color: var(--accent); }
 .badge.expired { background: rgba(192,57,43,0.15); color: #e74c3c; }
 .badge.pending { background: rgba(41,128,185,0.15); color: #5dade2; }
-.badge.basic   { background: rgba(90,88,85,0.3); color: var(--text2); }
+.badge.basic, .badge.starter { background: rgba(90,88,85,0.3); color: var(--text2); }
 .badge.pro     { background: rgba(41,128,185,0.15); color: #5dade2; }
 .badge.enterprise { background: rgba(232,200,74,0.15); color: var(--accent); }
 
@@ -563,7 +563,7 @@ td.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2
             <div class="chart-area" id="chartArea"></div>
             <div class="chart-legend">
               <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> Pro</div>
-              <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div> Basic</div>
+              <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div> Starter</div>
               <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div> Enterprise</div>
             </div>
           </div>
@@ -600,7 +600,7 @@ td.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2
             <button class="filter-pill active" onclick="filterPlan(this,'all')">Wszystkie</button>
             <button class="filter-pill" onclick="filterPlan(this,'enterprise')">Enterprise</button>
             <button class="filter-pill" onclick="filterPlan(this,'pro')">Pro</button>
-            <button class="filter-pill" onclick="filterPlan(this,'basic')">Basic</button>
+            <button class="filter-pill" onclick="filterPlan(this,'starter')">Starter</button>
             <button class="filter-pill" onclick="filterPlan(this,'trial')">Trial</button>
             <button class="tb-btn primary" style="margin-left:auto" onclick="openModal('addCompany')">+ Nowa firma</button>
           </div>
@@ -784,7 +784,7 @@ td.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2
           <div class="chart-card">
             <div class="sec-title">Plany i ceny (PLN)</div>
             <div class="rev-list">
-              <div class="rev-row"><div class="rev-name">Basic</div><div><input type="number" value="99" style="width:80px;background:var(--navy3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none"> PLN/mies.</div></div>
+              <div class="rev-row"><div class="rev-name">Starter</div><div><input type="number" value="99" style="width:80px;background:var(--navy3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none"> PLN/mies.</div></div>
               <div class="rev-row"><div class="rev-name">Pro</div><div><input type="number" value="299" style="width:80px;background:var(--navy3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none"> PLN/mies.</div></div>
               <div class="rev-row"><div class="rev-name">Enterprise</div><div><input type="number" value="599" style="width:80px;background:var(--navy3);border:1px solid var(--border);border-radius:5px;padding:4px 8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;outline:none"> PLN/mies.</div></div>
             </div>
