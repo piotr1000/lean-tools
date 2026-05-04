@@ -16,11 +16,30 @@
   const SUPABASE_KEY = 'sb_publishable_SXzGVMnJ8cJE-pmcGLgyTg_iL6PI66h';
   const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  // Test połączenia — sprawdza czy widzi linie produkcyjne
-  db.from('sqdp_lines').select('name').then(({ data, error }) => {
-    if (error) console.error('Supabase błąd:', error.message);
-    else console.log('Supabase połączony ✅ Linie:', data.map(d => d.name));
-  });
+  // Globale — uzupełniane przed startem React
+  let PLAN = 'starter';
+  let COMPANY_STATUS = 'trial';
+  let COMPANY_NAME = '';
+
+  // Odczyt slug z URL (?slug=riverdi) i pobranie planu z Supabase
+  async function initCompanyPlan() {
+    const slug = new URLSearchParams(window.location.search).get('slug');
+    if (slug) {
+      const { data, error } = await db
+        .from('companies')
+        .select('plan, status, name')
+        .eq('slug', slug)
+        .single();
+      if (!error && data) {
+        PLAN = data.plan || 'starter';
+        COMPANY_STATUS = data.status || 'trial';
+        COMPANY_NAME = data.name || '';
+      }
+    }
+  }
+
+  // Uruchamia React dopiero po rozwiązaniu planu
+  window.__sqdpReady = initCompanyPlan();
 </script>
 <style>* { box-sizing: border-box; } body { margin: 0; padding: 0; }</style>
 </head>
@@ -50,9 +69,9 @@ const { useState, useCallback, useRef, useEffect } = React;
 function makeSeedEntries() {
   const out = {};
   const skip = [1,2,8,9,15,16,22,23,29,30];
-  ['Unisystem','Riverdi'].forEach(line => {
-    const redQ = line==='Unisystem'?[7,14,21]:[10,20];
-    const redD = line==='Unisystem'?[18]:[5,19];
+  ['Linia 1','Linia 2'].forEach(line => {
+    const redQ = line==='Linia 1'?[7,14,21]:[10,20];
+    const redD = line==='Linia 1'?[18]:[5,19];
     for (let d=1;d<=31;d++) {
       if (skip.includes(d)) continue;
       const ds=`2026-03-${String(d).padStart(2,'0')}`;
@@ -70,9 +89,9 @@ function makeSeedEntries() {
 // Default labels per category
 const DEFAULT_LABELS={
   S:['Prawie wypadek','Brak ŚOI','Nieporządek w strefie','Uszkodzenie sprzętu'],
-  Q:['Za mało wydanych płytek','Za mało wyświetlaczy','Błąd pakowania','Reklamacja klienta','Niezgodna ilość'],
-  D:['Opóźnienie dostawy','Brak towaru na stanie','Za mało wydanych pozycji','Błąd adresu'],
-  P:['Przestój maszyny','Plan niewykonany','Brak materiału','Niski wolumen'],
+  Q:['Błąd operatora','Błąd procesu','Reklamacja klienta','Niezgodna ilość','Błąd dokumentacji'],
+  D:['Opóźnienie dostawy','Brak towaru na stanie','Plan niewykonany','Błąd adresu'],
+  P:['Przestój maszyny','Plan niewykonany','Brak materiału','Niska wydajność'],
 };
 
 // ─── LOKALIZACJE — domyślne, w pełni konfigurowalne ─────────────────────────
@@ -83,15 +102,12 @@ const DEFAULT_LABELS={
 const DEFAULT_LOCATIONS = [
   {id:'loc_wypadek',   label:'Wypadek przy pracy',             type:'accident',  statLabel:'Wypadki'},
   {id:'loc_near_miss', label:'Potencjalny wypadek (near-miss)', type:'near_miss', statLabel:'Potencjalne wypadki'},
-  {id:'loc_on_time',     label:'Dostawa terminowa',              type:'on_time',     statLabel:'Terminowe'},
-  {id:'loc_late',        label:'Dostawa nieterminowa',           type:'late',        statLabel:'Nieterminowe'},
-  {id:'loc_realized',    label:'Zlecenie zrealizowane',          type:'realized',    statLabel:'Zrealizowane'},
-  {id:'loc_not_realized',label:'Zlecenie niezrealizowane',       type:'not_realized',statLabel:'Niezrealizowane'},
-  {id:'loc_mag_prz',   label:'Magazyn — przyjęcie towaru',     type:'other',     statLabel:null},
-  {id:'loc_mag_komp',  label:'Magazyn — kompletacja',          type:'other',     statLabel:null},
-  {id:'loc_mag_wyd',   label:'Magazyn — wydanie na produkcję', type:'prod',      statLabel:'Błędy na produkcję'},
-  {id:'loc_produkcja', label:'Produkcja — linia produkcyjna',  type:'prod',      statLabel:'Błędy na produkcję'},
-  {id:'loc_wysylka',   label:'Wysyłka — do klienta',           type:'client',    statLabel:'Błędy do klienta'},
+  {id:'loc_linia',     label:'Linia produkcyjna',              type:'prod',      statLabel:'Błędy produkcji'},
+  {id:'loc_magazyn',   label:'Magazyn',                        type:'other',     statLabel:null},
+  {id:'loc_kontrola',  label:'Kontrola jakości',               type:'prod',      statLabel:'Błędy produkcji'},
+  {id:'loc_on_time',   label:'Dostawa terminowa',              type:'on_time',   statLabel:'Terminowe'},
+  {id:'loc_late',      label:'Dostawa nieterminowa',           type:'late',      statLabel:'Nieterminowe'},
+  {id:'loc_wysylka',   label:'Wysyłka',                        type:'client',    statLabel:'Błędy do klienta'},
   {id:'loc_inne',      label:'Inne',                           type:'other',     statLabel:null},
 ];
 
@@ -616,7 +632,7 @@ function LineEditorModal({lines,onSave,onClose}){
       onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{background:'white',borderRadius:'1.125rem',width:'100%',maxWidth:400,boxShadow:'0 20px 60px rgba(0,0,0,0.25)',overflow:'hidden'}}>
         <div style={{background:'#0f172a',padding:'0.875rem 1.25rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div style={{color:'white',fontWeight:800,fontSize:'0.9375rem'}}>⚙ Zarządzaj liniami</div>
+          <div style={{color:'white',fontWeight:800,fontSize:'0.9375rem'}}>⚙ Ustawienia tablicy</div>
           <button onClick={onClose} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:'1.75rem',height:'1.75rem',borderRadius:'50%',cursor:'pointer',fontSize:'0.9375rem',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
         </div>
         <div style={{padding:18}}>
@@ -627,7 +643,7 @@ function LineEditorModal({lines,onSave,onClose}){
               {draft.length>1&&<button onClick={()=>del(i)} style={{background:'#fee2e2',border:'none',borderRadius:'0.4375rem',width:'2.125rem',height:'2.125rem',cursor:'pointer',color:'#ef4444',fontSize:'0.9375rem',display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>}
             </div>
           ))}
-          <button onClick={add} style={{width:'100%',border:'2px dashed #cbd5e1',borderRadius:'0.5625rem',padding:'0.5625rem',background:'white',color:'#64748b',fontSize:'0.75rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:'0.1875rem'}}>＋ Dodaj linię</button>
+          <button onClick={add} style={{width:'100%',border:'2px dashed #cbd5e1',borderRadius:'0.5625rem',padding:'0.5625rem',background:'white',color:'#64748b',fontSize:'0.75rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop:'0.1875rem'}}>＋ Dodaj zakład / linię</button>
           <div style={{display:'flex',gap:'0.5rem',marginTop:'0.75rem'}}>
             <button onClick={onClose} style={{flex:1,background:'white',color:'#475569',border:'2px solid #e2e8f0',borderRadius:'0.625rem',padding:'0.625rem',fontWeight:700,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>Anuluj</button>
             <button onClick={()=>onSave(draft)} style={{flex:2,background:'#0f172a',color:'white',border:'none',borderRadius:'0.625rem',padding:'0.625rem',fontWeight:700,fontSize:'0.8125rem',cursor:'pointer',fontFamily:'inherit'}}>Zapisz</button>
@@ -1218,8 +1234,8 @@ const rows=issues.filter(i=>i.line===line&&i.area===cat.key&&(i.date||i.created_
         )}
       </div>
 
-      {/* ── STATS SECTION — dynamic based on location types ── */}
-      <div style={{background:'#f8fafc',borderTop:'3px solid #e2e8f0',padding:'0.625rem 0.875rem',flexShrink:0}}>
+      {/* ── STATS SECTION — plan PRO+ ── */}
+      {PLAN !== 'starter' && <div style={{background:'#f8fafc',borderTop:'3px solid #e2e8f0',padding:'0.625rem 0.875rem',flexShrink:0}}>
         <div style={{fontSize:'0.6875rem',fontWeight:700,color:'#64748b',letterSpacing:1,
           textTransform:'uppercase',marginBottom:'0.5rem'}}>
           {cat.key==='S' ? 'Statystyki wypadków'
@@ -1262,7 +1278,7 @@ const rows=issues.filter(i=>i.line===line&&i.area===cat.key&&(i.date||i.created_
             Łącznie {totalRows} {totalRows===1?'problem':totalRows<5?'problemy':'problemów'} w tym miesiącu
           </div>
         )}
-      </div>
+      </div>}
         {showAddModal&&(
   <AddIssueModal cat={cat} line={line} year={year} month={month}
     locations={locs} onSave={handleAddIssue} onClose={()=>setShowAddModal(false)}/>
@@ -1346,7 +1362,7 @@ function HelpPanel({onClose}){
     {id:'tablica',  label:'🔵 Tablica SQDP'},
     {id:'kolka',    label:'⭕ Kółka'},
     {id:'problemy', label:'📋 Problemy'},
-    {id:'statystyki',label:'📊 Statystyki'},
+    ...(PLAN !== 'starter' ? [{id:'statystyki',label:'📊 Statystyki'},{id:'podsumowanie',label:'📈 Podsumowanie'}] : []),
     {id:'podsumowanie',label:'📈 Podsumowanie'},
     {id:'ustawienia',label:'⚙ Ustawienia'},
   ];
@@ -1484,7 +1500,7 @@ function HelpPanel({onClose}){
         <h3 style={{margin:'0 0 0.75rem',fontSize:'1rem',color:'#0f172a'}}>Ustawienia i konfiguracja</h3>
         <div style={{display:'flex',flexDirection:'column',gap:'0.5rem',marginBottom:'0.875rem'}}>
           {[
-            {t:'Linie produkcyjne / Linie magazynowe',d:'Przycisk ⚙ obok nazw linii (np. Unisystem, Riverdi). Możesz zmieniać nazwy, dodawać nowe linie lub usuwać. Każda linia ma osobną tablicę i osobne dane.'},
+            {t:'Linie produkcyjne / Linie magazynowe',d:'Przycisk ⚙ obok nazwy tablicy. Możesz zmieniać nazwy linii, dodawać nowe lub usuwać. Każda linia ma osobną tablicę i osobne dane.'},
             {t:'Wyczyść miesiąc',d:'Czerwony przycisk "🗑 Wyczyść miesiąc" — czyści wszystkie zaznaczenia kółka dla aktualnie wybranej linii i miesiąca. Odpowiednik wymazania fizycznej tablicy. Wymaga potwierdzenia.'},
             {t:'Rozmiar interfejsu S/M/L/XL',d:'Pasek w samej górze ekranu. M = automatyczny (zalecany). L i XL dla dużych monitorów halowych oglądanych z odległości. S dla małych laptopów.'},
             {t:'Etykiety problemów',d:'W okienku dodawania uwagi możesz dodawać własne etykiety przez "+ Nowa etykieta". Są zapamiętywane na czas sesji. Domyślne etykiety można usuwać.'},
@@ -1666,13 +1682,15 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,onDeleteIssue,line
             borderRadius:'0.5rem',padding:'0.375rem 0.75rem',fontSize:'0.75rem',fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
           🗑 Wyczyść miesiąc
         </button>
-        {/* Switch to Summary */}
-        <button onClick={onSummary}
-          style={{background:'rgba(99,102,241,0.2)',border:'1px solid rgba(99,102,241,0.5)',color:'#a5b4fc',
-            borderRadius:'0.5rem',padding:'0.375rem 0.75rem',fontSize:'0.75rem',fontWeight:700,cursor:'pointer',fontFamily:'inherit',
-            display:'flex',alignItems:'center',gap:'0.3125rem'}}>
-          📊 Podsumowanie
-        </button>
+        {/* Switch to Summary — plan PRO+ */}
+        {PLAN !== 'starter' && (
+          <button onClick={onSummary}
+            style={{background:'rgba(99,102,241,0.2)',border:'1px solid rgba(99,102,241,0.5)',color:'#a5b4fc',
+              borderRadius:'0.5rem',padding:'0.375rem 0.75rem',fontSize:'0.75rem',fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+              display:'flex',alignItems:'center',gap:'0.3125rem'}}>
+            📊 Podsumowanie
+          </button>
+        )}
         {/* Help */}
         <button onClick={()=>setShowHelp(true)}
           title="Pomoc — opis funkcji aplikacji"
@@ -1743,8 +1761,8 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,onDeleteIssue,line
   );
 }
 
-// ─── HISTORICAL DATA from ODS (Unisystem) ────────────────────────────────────
-// Tabela podsumowania — bieżący rok, puste wiersze do samodzielnego uzupełnienia.
+// ─── HISTORICAL DATA — tabela podsumowania rocznego ──────────────────────────
+// Bieżący rok, puste wiersze do samodzielnego uzupełnienia.
 // S/Q/D/P będą pobierane live z tablicy gdy uzupełnisz kółka.
 // Pozostałe kolumny (wydania, pomyłki) wypełniasz ręcznie z systemu WMS/ERP.
 const HIST_UNISYSTEM = (() => {
@@ -2081,7 +2099,7 @@ async function exportPDF(summLine,allRows,extraCols,getCell,getBledyForMonth,par
 // ─── SUMMARY SCREEN ───────────────────────────────────────────────────────────
 function Summary({entries, lines, onBoard, extraCols, setExtraCols, extraData, setExtraData, issues, locations, onSaveCell}) {
   const now = new Date();
-  const [summLine, setSummLine] = useState(lines[0]?.name || 'Unisystem');
+  const [summLine, setSummLine] = useState(lines[0]?.name || '');
   const [editingCol, setEditingCol] = useState(null);
   const [newColLabel, setNewColLabel] = useState('');
 
@@ -2661,12 +2679,7 @@ function getBledyForMonth(lineName, year, month){
               {(()=>{
                 const now = new Date();
                 const isYearEnd = now.getMonth()===11 && now.getDate()===31;
-                const TARGETS = {
-                  Unisystem: { Q: 99.8, D: 99.9 },
-                  Riverdi:   { Q: 99.7, D: 99.8 },  // ← ustaw swoje wartości dla Riverdi
-                };
-                const t = TARGETS[summLine] || TARGETS.Unisystem;
-                const TARGET_Q = t.Q, TARGET_D = t.D;
+                const TARGET_Q = 99.0, TARGET_D = 95.0;
 
                 // Zlicz sumę pozycji i pomyłek ze wszystkich miesięcy
                 let totalPoz=0,totalPom=0,countPoz=0;
@@ -2807,13 +2820,8 @@ function getBledyForMonth(lineName, year, month){
             </div>
             {/* Cele roczne + wyniki dynamiczne */}
             {(()=>{
-              const TARGETS2 = {
-                Unisystem: { Q: 99.8, D: 99.9 },
-                Riverdi:   { Q: 99.7, D: 99.8 },  // ← te same wartości co wyżej
-              };
-              const t2 = TARGETS2[summLine] || TARGETS2.Unisystem;
-              const TARGET_QUALITY  = t2.Q;
-              const TARGET_DELIVERY = t2.D;
+              const TARGET_QUALITY  = 99.0;
+              const TARGET_DELIVERY = 95.0;
               const now = new Date();
               const isYearEnd = now.getMonth()===11 && now.getDate()===31;
 
@@ -3346,8 +3354,10 @@ const handleReset=useCallback((line,year,month)=>{
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+window.__sqdpReady.then(() => {
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<App />);
+});
 </script>
 </body>
 </html>
