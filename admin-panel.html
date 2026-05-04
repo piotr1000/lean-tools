@@ -1387,7 +1387,7 @@ async function saveCompany() {
     slug:         document.getElementById('ec-slug').value.trim(),
     plan:         document.getElementById('ec-plan').value,
     status:       document.getElementById('ec-status').value,
-    mrr:          {'starter':99,'pro':299,'enterprise':599}[document.getElementById('ec-plan').value] || 0,
+    mrr:          {'starter':129,'pro':299,'enterprise':599}[document.getElementById('ec-plan').value] || 0,
     renewal_date: document.getElementById('ec-renewal').value || null,
     note:         document.getElementById('ec-note').value,
     config,
