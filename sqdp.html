@@ -22,9 +22,11 @@
   let COMPANY_NAME = '';
 
   // Odczyt slug z URL (?slug=riverdi) i pobranie planu z Supabase
-  async function initCompanyPlan() {
-    const slug = new URLSearchParams(window.location.search).get('slug');
+async function initCompanyPlan() {
+    const slug = new URLSearchParams(window.location.search).get('slug')
+               || localStorage.getItem('sqdp_slug');
     if (slug) {
+      localStorage.setItem('sqdp_slug', slug); // zapamiętaj na odświeżenie
       const { data, error } = await db
         .from('companies')
         .select('plan, status, name')

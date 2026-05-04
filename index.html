@@ -539,7 +539,7 @@
 <script>
   // ── CREDENTIALS ──
   const USERS = {
-    "Unisystem": { haslo: "Lean2026!", rola: "zarzad" }
+    "Unisystem": { haslo: "Lean2026!", rola: "zarzad", slug: "unisystem" }
   };
   const ROLE_APPS = {
     zarzad: ['sqdp','kamishibai','kaizen']
@@ -562,6 +562,7 @@
     if (user && user.haslo === pass) {
       err.style.display = 'none';
       currentRole = user.rola;
+      if (user.slug) localStorage.setItem('sqdp_slug', user.slug);
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('dashboard').style.display   = 'block';
       document.getElementById('navUser').textContent = '// ' + login;
