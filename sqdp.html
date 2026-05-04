@@ -32,6 +32,7 @@ async function initCompanyPlan() {
         .select('plan, status, name')
         .eq('slug', slug)
         .single();
+      console.log('PLAN fetch:', { slug, data, error });
       if (!error && data) {
         PLAN = data.plan || 'starter';
         COMPANY_STATUS = data.status || 'trial';
