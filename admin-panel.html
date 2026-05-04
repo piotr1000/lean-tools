@@ -908,6 +908,15 @@ td.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2
             </select>
           </div>
         </div>
+        <div class="form-row" style="margin-top:0.75rem">
+          <label class="form-label">Tablice</label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);cursor:pointer"><input type="checkbox" id="ec-board-sqdp"        value="SQDP">        SQDP</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);cursor:pointer"><input type="checkbox" id="ec-board-kamishibai"  value="Kamishibai">  Kamishibai</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);cursor:pointer"><input type="checkbox" id="ec-board-kaizen"      value="Kaizen">      Kaizen</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text2);cursor:pointer"><input type="checkbox" id="ec-board-sqdca"       value="SQDCA">       SQDCA</label>
+          </div>
+        </div>
       </div>
       <div id="et-config" style="display:none">
         <div class="form-row">
@@ -1361,6 +1370,11 @@ function editCompany(id) {
       <td style="color:var(--text2);font-family:'DM Mono',monospace;font-size:11px;padding:4px 0">${u.email}</td>
       <td><span class="badge ${u.role==='admin'?'pro':'basic'}">${u.role}</span></td>
     </tr>`).join('')}</tbody></table>`;
+  const boards = c.boards || [];
+  ['sqdp','kamishibai','kaizen','sqdca'].forEach(b => {
+    const el = document.getElementById(`ec-board-${b}`);
+    if (el) el.checked = boards.includes(el.value);
+  });
   openModal('editCompany');
 }
 
@@ -1376,7 +1390,11 @@ async function saveCompany() {
     mrr:          {'starter':99,'pro':299,'enterprise':599}[document.getElementById('ec-plan').value] || 0,
     renewal_date: document.getElementById('ec-renewal').value || null,
     note:         document.getElementById('ec-note').value,
-    config
+    config,
+    boards: ['sqdp','kamishibai','kaizen','sqdca']
+      .map(b => document.getElementById(`ec-board-${b}`))
+      .filter(el => el?.checked)
+      .map(el => el.value)
   };
   await db.patch('companies', editingCompanyId, data);
   await logActivity(editingCompanyId, data.name, 'Superadmin', 'Edycja firmy', `Plan: ${data.plan}, Status: ${data.status}`);
