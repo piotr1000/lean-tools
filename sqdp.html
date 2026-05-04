@@ -1053,6 +1053,7 @@ function handleAddIssue(title, date, locId){
   setShowAddModal(false);
 }
   const [editTitle,setEditTitle]=useState('');
+  const [editLoc,setEditLoc]=useState('');
 
   const locs = locations || DEFAULT_LOCATIONS;
   function getLocMeta(locId){
@@ -1072,12 +1073,12 @@ function handleAddIssue(title, date, locId){
   const monthStr=`${year}-${String(month+1).padStart(2,'0')}`;
 const rows=issues.filter(i=>i.line===line&&i.area===cat.key&&(i.date||i.created_at||'').startsWith(monthStr));
 
-  function startEdit(i){setEditId(i.id);setEditTitle(i.title);}
+  function startEdit(i){setEditId(i.id);setEditTitle(i.title);setEditLoc(i.location||'');}
   function saveEdit(i){
-  setIssues(prev=>prev.map(x=>x.id===i.id?{...x,title:editTitle}:x));
-  db.from('sqdp_issues').update({title: editTitle, updated_at: new Date().toISOString()})
+  setIssues(prev=>prev.map(x=>x.id===i.id?{...x,title:editTitle,location:editLoc}:x));
+  db.from('sqdp_issues').update({title:editTitle, location:editLoc, updated_at:new Date().toISOString()})
     .eq('id', i.id)
-    .then(({error})=>{ if(error) console.error('Błąd zapisu tytułu:', error.message); });
+    .then(({error})=>{ if(error) console.error('Błąd zapisu:', error.message); });
   setEditId(null);
 }
   function del(id){ if(onDeleteIssue) onDeleteIssue(id); else setIssues(prev=>prev.filter(x=>x.id!==id)); }
@@ -1153,20 +1154,31 @@ const rows=issues.filter(i=>i.line===line&&i.area===cat.key&&(i.date||i.created_
                 padding:'0.6rem 0.875rem',display:'flex',
                 alignItems:'flex-start',gap:'0.5rem',minHeight:'3rem'}}>
                 {editId===issue.id?(
-                  <div style={{display:'flex',gap:'0.3125rem',flex:1}}>
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.3rem',flex:1}}>
                     <input value={editTitle} onChange={e=>setEditTitle(e.target.value)}
                       onKeyDown={e=>e.key==='Enter'&&saveEdit(issue)}
                       style={{flex:1,border:'1.5px solid #3b82f6',borderRadius:'0.4375rem',
                         padding:'0.3125rem 0.5625rem',fontSize:'0.75rem',
                         fontFamily:'inherit',outline:'none'}} autoFocus/>
-                    <button onClick={()=>saveEdit(issue)}
-                      style={{background:'#10b981',border:'none',borderRadius:'0.375rem',
-                        padding:'0.3125rem 0.5625rem',color:'white',fontWeight:700,
-                        fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>✓</button>
-                    <button onClick={()=>setEditId(null)}
-                      style={{background:'#f1f5f9',border:'none',borderRadius:'0.375rem',
-                        padding:'0.3125rem 0.4375rem',color:'#94a3b8',
-                        fontSize:'0.75rem',cursor:'pointer',flexShrink:0}}>✕</button>
+                    <select value={editLoc} onChange={e=>setEditLoc(e.target.value)}
+                      style={{border:'1.5px solid #3b82f6',borderRadius:'0.4375rem',
+                        padding:'0.3125rem 0.5rem',fontSize:'0.75rem',
+                        fontFamily:'inherit',background:'white',color:'#1e293b'}}>
+                      <option value=''>— brak miejsca —</option>
+                      {locs.map(l=>(
+                        <option key={l.id} value={l.id}>{l.label}</option>
+                      ))}
+                    </select>
+                    <div style={{display:'flex',gap:'0.3rem'}}>
+                      <button onClick={()=>saveEdit(issue)}
+                        style={{background:'#10b981',border:'none',borderRadius:'0.375rem',
+                          padding:'0.3125rem 0.5625rem',color:'white',fontWeight:700,
+                          fontSize:'0.75rem',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>✓ Zapisz</button>
+                      <button onClick={()=>setEditId(null)}
+                        style={{background:'#f1f5f9',border:'none',borderRadius:'0.375rem',
+                          padding:'0.3125rem 0.4375rem',color:'#94a3b8',
+                          fontSize:'0.75rem',cursor:'pointer',flexShrink:0}}>✕</button>
+                    </div>
                   </div>
                 ):(
                   <div style={{flex:1,minWidth:0}}>
