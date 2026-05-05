@@ -614,6 +614,7 @@ td.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text2
                 <th>Tablice</th>
                 <th>MRR</th>
                 <th>Wygasa</th>
+                <th>Link</th>
                 <th></th>
               </tr>
             </thead>
@@ -1217,6 +1218,16 @@ function renderCompanies(filter = 'all', search = '') {
       <td><div style="display:flex;gap:4px;flex-wrap:wrap">${(c.boards||[]).map(b=>`<span style="font-size:10px;background:var(--navy3);border:1px solid var(--border);padding:2px 6px;border-radius:4px;color:var(--text2)">${b}</span>`).join('')}</div></td>
       <td class="mono" style="color:var(--accent)">${c.mrr > 0 ? c.mrr+' PLN' : '—'}</td>
       <td class="mono" style="${isExpiringSoon(c.renewal_date)?'color:#e74c3c':''}">${c.renewal_date || '—'}</td>
+      <td onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:center;gap:6px">
+          <a href="https://leantools.pl/sqdp.html?slug=${c.slug}" target="_blank"
+            style="font-size:11px;font-family:'DM Mono',monospace;color:var(--accent);
+              text-decoration:none;white-space:nowrap" title="Otwórz tablicę">
+            🔗 ${c.slug}
+          </a>
+          <div class="act-btn" onclick="navigator.clipboard.writeText('https://leantools.pl/sqdp.html?slug=${c.slug}');showToast('Skopiowano ✓')" title="Kopiuj link">⎘</div>
+        </div>
+      </td>
       <td>
         <div class="action-row" onclick="event.stopPropagation()">
           <div class="act-btn" onclick="editCompany('${c.id}')" title="Edytuj">✎</div>
