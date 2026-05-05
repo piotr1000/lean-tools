@@ -1002,8 +1002,8 @@ function AddIssueModal({cat, line, year, month, locations, onSave, onClose}){
                 padding:'0.5625rem 0.75rem',fontSize:'0.8125rem',fontFamily:'inherit',
                 outline:'none',resize:'vertical'}}/>
           </div>
-          {/* Lokalizacja */}
-          <div>
+          {/* Lokalizacja — tylko plan Pro+ */}
+          {PLAN!=='starter'&&<div>
             <label style={{display:'block',fontSize:'0.75rem',fontWeight:700,color:'#475569',marginBottom:'0.3125rem'}}>
               Miejsce niezgodności
             </label>
@@ -1013,7 +1013,7 @@ function AddIssueModal({cat, line, year, month, locations, onSave, onClose}){
               <option value=''>— wybierz miejsce (opcjonalnie)</option>
               {locs.map(l=>(<option key={l.id} value={l.id}>{l.label}</option>))}
             </select>
-          </div>
+          </div>}
           {/* Przyciski */}
           <div style={{display:'flex',gap:'0.625rem'}}>
             <button onClick={onClose}
@@ -1615,11 +1615,11 @@ function MainBoard({entries,onToggle,onReset,issues,setIssues,onDeleteIssue,line
     const k=eKey(ln,ds);
     const cur=entries[k]?.[catKey]??null;
     const next=CYCLE[cur];
-    // next===null = 4. kliknięcie = reset — App root czyści wszystko
     onToggle(ln,ds,catKey,next,null,null);
+    // Starter: tylko zmiana koloru, bez okna kontekstowego
+    if(PLAN==='starter') return;
     const same=modal&&modal.line===ln&&modal.date===ds&&modal.catKey===catKey;
     if(next===null){
-      // Reset — zamknij modal jeśli był otwarty dla tego segmentu
       if(same) setModal(null);
     } else if(next==='yellow'||next==='red'){
       if(!same) setModal({line:ln,date:ds,catKey});
